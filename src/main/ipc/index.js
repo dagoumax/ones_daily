@@ -161,17 +161,21 @@ function registerVoiceHandlers() {
   let whisperReady = false;
 
   ipcMain.handle('voice:init', async () => {
+    console.log('[IPC] voice:init called, module:', !!whisperModule, 'ready:', whisperReady);
     if (!whisperModule) return { success: false, error: 'Whisper module not available' };
     if (whisperReady) return { success: true, status: whisperModule.whisper.status };
     try {
+      console.log('[IPC] Initializing whisper with:', exePath, modelPath);
       await whisperModule.init({
         executablePath: exePath,
         modelPath: modelPath,
         debug: true,
       });
       whisperReady = true;
+      console.log('[IPC] Whisper init success, status:', whisperModule.whisper.status);
       return { success: true, status: whisperModule.whisper.status };
     } catch (e) {
+      console.error('[IPC] Whisper init failed:', e.message);
       return { success: false, error: e.message };
     }
   });
