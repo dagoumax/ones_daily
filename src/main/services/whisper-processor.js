@@ -285,7 +285,6 @@ class WhisperProcessor extends EventEmitter {
           try { fs.unlinkSync(path.join(this.config.tempDir, 'whisper_output')); } catch {}
           this._log(`Transcription result: "${text}"`);
           resolve({ text, confidence: 0.85, raw: stdout || stderr });
-          }
         } else if (code === null) {
           // 被 kill
           reject(new Error('Transcription process was killed'));
