@@ -59,21 +59,33 @@ function createTray() {
 }
 
 app.whenReady().then(async () => {
-  // 初始化数据库
-  await initDatabase();
+  try {
+    // 初始化数据库
+    await initDatabase();
 
-  // 注册 IPC handlers
-  registerIpcHandlers();
+    // 注册 IPC handlers
+    registerIpcHandlers();
 
-  // 创建窗口
-  createWindow();
-  createTray();
+    // 创建窗口
+    createWindow();
+    createTray();
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  } catch (err) {
+    console.error('[App] Failed to start:', err);
+    // 即使数据库初始化失败也尝试创建窗口
+    registerIpcHandlers();
+    createWindow();
+  }
+});
+
+// 捕获未处理的错误，防止窗口闪退
+process.on('uncaughtException', (err) => {
+  console.error('[Uncaught Exception]', err);
 });
 
 app.on('window-all-closed', () => {
