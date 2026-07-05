@@ -153,7 +153,6 @@ function registerVoiceHandlers() {
   const whisperModule = (() => {
     try { return require('../services/whisper-processor'); } catch { return null; }
   })();
-  const whisper = whisperModule?.whisper;
 
   // Auto-detect whisper paths
   const appRoot = path.join(__dirname, '..', '..', '..');
@@ -162,8 +161,8 @@ function registerVoiceHandlers() {
   let whisperReady = false;
 
   ipcMain.handle('voice:init', async () => {
-    if (!whisper) return { success: false, error: 'Whisper module not available' };
-    if (whisperReady) return { success: true, status: whisper.status };
+    if (!whisperModule) return { success: false, error: 'Whisper module not available' };
+    if (whisperReady) return { success: true, status: whisperModule.whisper.status };
     try {
       await whisperModule.init({
         executablePath: exePath,
@@ -171,21 +170,20 @@ function registerVoiceHandlers() {
         debug: true,
       });
       whisperReady = true;
-      return { success: true, status: whisper.status };
+      return { success: true, status: whisperModule.whisper.status };
     } catch (e) {
       return { success: false, error: e.message };
     }
   });
 
   ipcMain.handle('voice:transcribe', async (_, audioBase64) => {
-    if (!whisper) return { text: '', error: 'Whisper module not available' };
+    if (!whisperModule || !whisperReady) return { text: '', error: 'Whisper not initialized' };
     try {
       const fs = require('fs');
-      const path = require('path');
       const os = require('os');
       const tmpFile = path.join(os.tmpdir(), `voice-${Date.now()}.wav`);
       fs.writeFileSync(tmpFile, Buffer.from(audioBase64, 'base64'));
-      const result = await whisper.transcribe(tmpFile);
+      const result = await whisperModule.whisper.transcribe(tmpFile);
       try { fs.unlinkSync(tmpFile); } catch {}
       return { text: result.text, confidence: result.confidence };
     } catch (e) {
@@ -194,8 +192,8 @@ function registerVoiceHandlers() {
   });
 
   ipcMain.handle('voice:getStatus', () => {
-    if (!whisper) return { state: 'not_available', modelLoaded: false };
-    return whisper.status;
+    if (!whisperModule || !whisperReady) return { state: 'not_available', modelLoaded: false };
+    return whisperModule.whisper.status;
   });
 
   ipcMain.handle('voice:speak', () => ({ status: 'not_implemented' }));

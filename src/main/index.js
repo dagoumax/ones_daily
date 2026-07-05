@@ -76,8 +76,7 @@ app.whenReady().then(async () => {
     });
   } catch (err) {
     console.error('[App] Failed to start:', err);
-    // 即使数据库初始化失败也尝试创建窗口
-    registerIpcHandlers();
+    // 即使初始化失败也尝试创建窗口（但不重复注册 IPC）
     createWindow();
   }
 });
