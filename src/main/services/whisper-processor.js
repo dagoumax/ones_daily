@@ -266,21 +266,25 @@ class WhisperProcessor extends EventEmitter {
         clearTimeout(timeoutId);
         this._currentProcess = null;
 
+        this._log(`whisper exited with code ${code}, stdout length: ${stdout.length}, stderr length: ${stderr.length}`);
+
         if (code === 0) {
-          // 读取输出文件
+          // whisper.cpp outputs to --output-file with .txt appended
           const outputPath = path.join(this.config.tempDir, 'whisper_output.txt');
+          let text = '';
           try {
-            const text = fs.readFileSync(outputPath, 'utf-8').trim();
-            // 清理输出文件
-            try { fs.unlinkSync(outputPath); } catch (_) {}
-            resolve({ text, confidence: 0.85, raw: stdout });
-          } catch (err) {
-            // 尝试从 stdout 解析
-            if (stdout.trim()) {
-              resolve({ text: stdout.trim(), confidence: 0.7, raw: stdout });
-            } else {
-              reject(new Error('No transcription output'));
-            }
+            text = fs.readFileSync(outputPath, 'utf-8').trim();
+          } catch (_) {
+            // Try without .txt (some versions don't append)
+            try {
+              text = fs.readFileSync(path.join(this.config.tempDir, 'whisper_output'), 'utf-8').trim();
+            } catch {}
+          }
+          // Clean up
+          try { fs.unlinkSync(outputPath); } catch {}
+          try { fs.unlinkSync(path.join(this.config.tempDir, 'whisper_output')); } catch {}
+          this._log(`Transcription result: "${text}"`);
+          resolve({ text, confidence: 0.85, raw: stdout || stderr });
           }
         } else if (code === null) {
           // 被 kill
