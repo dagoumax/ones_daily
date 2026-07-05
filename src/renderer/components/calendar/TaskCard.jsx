@@ -1,0 +1,124 @@
+import React from 'react';
+
+const PRIORITY_CONFIG = {
+  P0: { color: 'var(--priority-p0)', label: '紧急' },
+  P1: { color: 'var(--priority-p1)', label: '重要' },
+  P2: { color: 'var(--priority-p2)', label: '普通' },
+  P3: { color: 'var(--priority-p3)', label: '低优' },
+};
+
+export default function TaskCard({ task, onClick, onComplete, style }) {
+  const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.P2;
+  const isCompleted = task.status === 'completed';
+  const isPast = task.end_time && new Date(task.end_time) < new Date() && !isCompleted;
+
+  return (
+    <div
+      className={`task-card ${isCompleted ? 'completed' : ''} ${isPast ? 'past' : ''}`}
+      onClick={onClick}
+      style={style}
+    >
+      <div className="task-priority-bar" style={{ background: priority.color }} />
+      <div className="task-body">
+        <div className="task-title">{task.title}</div>
+        <div className="task-meta">
+          {task.start_time && (
+            <span className="task-time">
+              {formatTime(task.start_time)}
+              {task.end_time && ` - ${formatTime(task.end_time)}`}
+            </span>
+          )}
+          {task.tags && JSON.parse(task.tags || '[]').map((tag, i) => (
+            <span key={i} className="task-tag">{tag}</span>
+          ))}
+        </div>
+      </div>
+      {!isCompleted && (
+        <button
+          className="task-complete-btn"
+          onClick={(e) => { e.stopPropagation(); onComplete?.(); }}
+          title="标记完成"
+        >
+          ○
+        </button>
+      )}
+
+      <style jsx>{`
+        .task-card {
+          display: flex;
+          align-items: stretch;
+          background: var(--bg-surface);
+          border-radius: 6px;
+          overflow: hidden;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          z-index: 5;
+          margin-bottom: 2px;
+        }
+        .task-card:hover {
+          background: var(--bg-elevated);
+        }
+        .task-card.completed {
+          opacity: 0.5;
+        }
+        .task-card.completed .task-title {
+          text-decoration: line-through;
+        }
+        .task-card.past:not(.completed) {
+          border: 1px solid rgba(233, 69, 96, 0.3);
+        }
+        .task-priority-bar {
+          width: 3px;
+          flex-shrink: 0;
+        }
+        .task-body {
+          flex: 1;
+          padding: 6px 10px;
+          min-width: 0;
+        }
+        .task-title {
+          font-size: 13px;
+          font-weight: 500;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .task-meta {
+          display: flex;
+          gap: 8px;
+          margin-top: 2px;
+          font-size: 11px;
+          color: var(--text-muted);
+        }
+        .task-tag {
+          background: var(--bg-elevated);
+          padding: 0 6px;
+          border-radius: 3px;
+          font-size: 10px;
+        }
+        .task-complete-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          flex-shrink: 0;
+          border: none;
+          background: transparent;
+          color: var(--text-muted);
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .task-complete-btn:hover {
+          color: var(--success);
+          background: rgba(74, 222, 128, 0.1);
+        }
+      `}</style>
+    </div>
+  );
+}
+
+function formatTime(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}

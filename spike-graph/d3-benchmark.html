@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>D3.js Canvas 力导向图性能测试 — 500节点 800边</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+#toolbar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: #16213e; border-bottom: 1px solid #0f3460; z-index: 10; }
+#toolbar h2 { font-size: 14px; font-weight: 500; margin-right: auto; }
+.metric { display: flex; align-items: center; gap: 6px; font-size: 13px; background: #0f3460; padding: 6px 12px; border-radius: 6px; }
+.metric .label { color: #a0aec0; }
+.metric .value { font-weight: 600; color: #e94560; font-variant-numeric: tabular-nums; }
+.metric .value.good { color: #4ade80; }
+.metric .value.warn { color: #fbbf24; }
+#canvas-wrap { flex: 1; position: relative; cursor: grab; }
+#canvas-wrap:active { cursor: grabbing; }
+#canvas-wrap canvas { display: block; }
+#status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15,52,96,0.9); padding: 6px 16px; border-radius: 20px; font-size: 12px; pointer-events: none; transition: opacity 0.3s; }
+#legend { position: absolute; bottom: 16px; right: 16px; background: rgba(22,33,62,0.9); padding: 10px 14px; border-radius: 8px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+button { background: #e94560; color: white; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+button:hover { background: #c73b54; }
+button.reset { background: #0f3460; }
+button.reset:hover { background: #1a4a7a; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <h2>🔬 D3.js Canvas — 力导向图性能测试</h2>
+    <div class="metric"><span class="label">节点:</span><span class="value" id="nodeCount">500</span></div>
+    <div class="metric"><span class="label">边:</span><span class="value" id="edgeCount">800</span></div>
+    <div class="metric"><span class="label">布局:</span><span class="value" id="layoutTime">—</span></div>
+    <div class="metric"><span class="label">FPS:</span><span class="value" id="fpsValue">—</span></div>
+    <div class="metric"><span class="label">内存:</span><span class="value" id="memValue">—</span></div>
+    <button onclick="restartSimulation()">🔄 重新布局</button>
+    <button class="reset" onclick="resetView()">🔍 重置视角</button>
+  </div>
+  <div id="canvas-wrap">
+    <div id="status">正在生成力导向布局...</div>
+    <div id="legend">
+      <div class="legend-item"><span class="legend-dot" style="background:#4fc3f7"></span> task（事项）</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#81c784"></span> note（笔记）</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#ffb74d"></span> card（卡片）</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#e0e0e0"></span> tag（标签）</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const NODE_COUNT = 500;
+const EDGE_COUNT = 800;
+const COLORS = { task: '#4fc3f7', note: '#81c784', card: '#ffb74d', tag: '#e0e0e0', person: '#ce93d8', project: '#ff8a65' };
+const TYPES = ['task', 'note', 'card', 'tag', 'person', 'project'];
+
+// --- 生成 Mock 数据 ---
+function generateData() {
+  const nodes = [];
+  for (let i = 0; i < NODE_COUNT; i++) {
+    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+    nodes.push({
+      id: i,
+      type,
+      label: `${type}-${i}`,
+      radius: type === 'tag' ? 4 : type === 'task' ? 7 : 6
+    });
+  }
+  // 生成边，优先连接相近节点模拟真实图谱结构
+  const edges = new Set();
+  for (let i = 0; i < NODE_COUNT && edges.size < EDGE_COUNT; i++) {
+    const clusterSize = 5 + Math.floor(Math.random() * 15);
+    for (let j = 0; j < clusterSize && edges.size < EDGE_COUNT; j++) {
+      const target = Math.floor(Math.random() * NODE_COUNT);
+      if (target !== i) {
+        const key = Math.min(i, target) + '_' + Math.max(i, target);
+        if (!edges.has(key)) {
+          edges.add(key);
+        }
+      }
+    }
+  }
+  // 补充随机边达到目标数量
+  while (edges.size < EDGE_COUNT) {
+    const a = Math.floor(Math.random() * NODE_COUNT);
+    const b = Math.floor(Math.random() * NODE_COUNT);
+    if (a !== b) {
+      edges.add(Math.min(a, b) + '_' + Math.max(a, b));
+    }
+  }
+  const links = Array.from(edges).map(k => {
+    const [s, t] = k.split('_').map(Number);
+    return { source: s, target: t };
+  });
+  return { nodes, links };
+}
+
+// --- Canvas 渲染 ---
+const wrap = document.getElementById('canvas-wrap');
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+wrap.appendChild(canvas);
+
+let width, height;
+function resize() {
+  width = wrap.clientWidth;
+  height = wrap.clientHeight;
+  canvas.width = width * devicePixelRatio;
+  canvas.height = height * devicePixelRatio;
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- 变换（缩放+平移）---
+let transform = { x: 0, y: 0, k: 1 };
+let isDragging = false, dragStart = { x: 0, y: 0 };
+
+wrap.addEventListener('mousedown', e => { isDragging = true; dragStart = { x: e.clientX - transform.x, y: e.clientY - transform.y }; });
+wrap.addEventListener('mousemove', e => { if (isDragging) { transform.x = e.clientX - dragStart.x; transform.y = e.clientY - dragStart.y; } });
+wrap.addEventListener('mouseup', () => { isDragging = false; });
+wrap.addEventListener('mouseleave', () => { isDragging = false; });
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  const mx = e.clientX, my = e.clientY;
+  transform.x = mx - (mx - transform.x) * factor;
+  transform.y = my - (my - transform.y) * factor;
+  transform.k = Math.max(0.1, Math.min(3, transform.k * factor));
+});
+
+// --- FPS 测量 ---
+let frameCount = 0, lastFpsTime = performance.now(), currentFps = 0;
+function measureFps() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    currentFps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// --- D3 力导向模拟 ---
+let simulation, nodesData, linksData;
+function initSimulation() {
+  const data = generateData();
+  nodesData = data.nodes;
+  linksData = data.links;
+
+  document.getElementById('nodeCount').textContent = NODE_COUNT;
+  document.getElementById('edgeCount').textContent = EDGE_COUNT;
+  document.getElementById('status').textContent = '正在计算力导向布局...';
+  document.getElementById('layoutTime').textContent = '计算中...';
+
+  const layoutStart = performance.now();
+
+  simulation = d3.forceSimulation(nodesData)
+    .force('link', d3.forceLink(linksData).id(d => d.id).distance(40))
+    .force('charge', d3.forceManyBody().strength(-80))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => d.radius + 3))
+    .alphaDecay(0.02)
+    .on('tick', () => { /* Canvas 渲染在 render 中处理 */ })
+    .on('end', () => {
+      const layoutEnd = performance.now();
+      const time = (layoutEnd - layoutStart).toFixed(0);
+      document.getElementById('layoutTime').textContent = time + 'ms';
+      document.getElementById('layoutTime').className = time < 2000 ? 'value good' : time < 5000 ? 'value warn' : 'value';
+      document.getElementById('status').textContent = '布局完成 — 拖拽/滚轮交互测试';
+      document.getElementById('status').style.opacity = '1';
+      setTimeout(() => { document.getElementById('status').style.opacity = '0'; }, 3000);
+    });
+}
+
+// --- Canvas 渲染循环 ---
+function render() {
+  measureFps();
+  ctx.clearRect(0, 0, width, height);
+
+  ctx.save();
+  ctx.translate(transform.x, transform.y);
+  ctx.scale(transform.k, transform.k);
+
+  // 边
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (const link of linksData) {
+    ctx.moveTo(link.source.x, link.source.y);
+    ctx.lineTo(link.target.x, link.target.y);
+  }
+  ctx.stroke();
+
+  // 节点
+  for (const node of nodesData) {
+    const r = node.radius / transform.k;
+    ctx.fillStyle = COLORS[node.type] || '#e0e0e0';
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, Math.max(2, r), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  // 更新 FPS 显示
+  document.getElementById('fpsValue').textContent = currentFps;
+  document.getElementById('fpsValue').className = currentFps >= 30 ? 'value good' : currentFps >= 20 ? 'value warn' : 'value';
+
+  // 更新内存（估算）
+  if (performance.memory) {
+    const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(0);
+    document.getElementById('memValue').textContent = mb + 'MB';
+    document.getElementById('memValue').className = mb < 500 ? 'value good' : mb < 800 ? 'value warn' : 'value';
+  } else {
+    document.getElementById('memValue').textContent = 'N/A';
+  }
+
+  requestAnimationFrame(render);
+}
+
+function restartSimulation() {
+  if (simulation) simulation.stop();
+  initSimulation();
+}
+
+function resetView() {
+  transform = { x: 0, y: 0, k: 1 };
+}
+
+// --- 启动 ---
+initSimulation();
+requestAnimationFrame(render);
+
+console.log('D3.js Canvas 性能测试已启动');
+console.log(`节点: ${NODE_COUNT}, 边: ${EDGE_COUNT}`);
+console.log('观察指标：布局时间、交互FPS、内存占用');
+</script>
+</body>
+</html>

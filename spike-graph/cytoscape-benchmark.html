@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cytoscape.js 力导向图性能测试 — 500节点 800边</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+#toolbar { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: #16213e; border-bottom: 1px solid #0f3460; z-index: 10; }
+#toolbar h2 { font-size: 14px; font-weight: 500; margin-right: auto; }
+.metric { display: flex; align-items: center; gap: 6px; font-size: 13px; background: #0f3460; padding: 6px 12px; border-radius: 6px; }
+.metric .label { color: #a0aec0; }
+.metric .value { font-weight: 600; color: #e94560; font-variant-numeric: tabular-nums; }
+.metric .value.good { color: #4ade80; }
+.metric .value.warn { color: #fbbf24; }
+#cy-wrap { flex: 1; position: relative; }
+#cy { width: 100%; height: 100%; }
+#status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(15,52,96,0.9); padding: 6px 16px; border-radius: 20px; font-size: 12px; pointer-events: none; z-index: 10; transition: opacity 0.3s; }
+button { background: #e94560; color: white; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+button:hover { background: #c73b54; }
+button.reset { background: #0f3460; }
+button.reset:hover { background: #1a4a7a; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <h2>🔬 Cytoscape.js — 力导向图性能测试</h2>
+    <div class="metric"><span class="label">节点:</span><span class="value" id="nodeCount">500</span></div>
+    <div class="metric"><span class="label">边:</span><span class="value" id="edgeCount">800</span></div>
+    <div class="metric"><span class="label">布局:</span><span class="value" id="layoutTime">—</span></div>
+    <div class="metric"><span class="label">FPS:</span><span class="value" id="fpsValue">—</span></div>
+    <div class="metric"><span class="label">内存:</span><span class="value" id="memValue">—</span></div>
+    <button onclick="restartLayout()">🔄 重新布局</button>
+    <button class="reset" onclick="resetView()">🔍 重置视角</button>
+  </div>
+  <div id="cy-wrap">
+    <div id="cy"></div>
+    <div id="status">正在计算力导向布局...</div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script>
+const NODE_COUNT = 500;
+const EDGE_COUNT = 800;
+const COLORS = { task: '#4fc3f7', note: '#81c784', card: '#ffb74d', tag: '#e0e0e0', person: '#ce93d8', project: '#ff8a65' };
+const TYPES = ['task', 'note', 'card', 'tag', 'person', 'project'];
+
+// --- 生成 Mock 数据（与 D3 测试一致）---
+function generateElements() {
+  const elements = [];
+  for (let i = 0; i < NODE_COUNT; i++) {
+    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+    elements.push({
+      data: { id: 'n' + i, label: `${type}-${i}`, type },
+      style: { 'background-color': COLORS[type], width: type === 'tag' ? 8 : type === 'task' ? 14 : 12, height: type === 'tag' ? 8 : type === 'task' ? 14 : 12 }
+    });
+  }
+  const edgeSet = new Set();
+  for (let i = 0; i < NODE_COUNT && edgeSet.size < EDGE_COUNT; i++) {
+    const clusterSize = 5 + Math.floor(Math.random() * 15);
+    for (let j = 0; j < clusterSize && edgeSet.size < EDGE_COUNT; j++) {
+      const target = Math.floor(Math.random() * NODE_COUNT);
+      if (target !== i) {
+        const key = Math.min(i, target) + '_' + Math.max(i, target);
+        if (!edgeSet.has(key)) edgeSet.add(key);
+      }
+    }
+  }
+  while (edgeSet.size < EDGE_COUNT) {
+    const a = Math.floor(Math.random() * NODE_COUNT);
+    const b = Math.floor(Math.random() * NODE_COUNT);
+    if (a !== b) edgeSet.add(Math.min(a, b) + '_' + Math.max(a, b));
+  }
+  for (const k of edgeSet) {
+    const [s, t] = k.split('_');
+    elements.push({ data: { id: 'e' + s + '_' + t, source: 'n' + s, target: 'n' + t } });
+  }
+  return elements;
+}
+
+// --- FPS ---
+let frameCount = 0, lastFpsTime = performance.now(), currentFps = 0;
+function measureFps() {
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    currentFps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    frameCount = 0;
+    lastFpsTime = now;
+    document.getElementById('fpsValue').textContent = currentFps;
+    document.getElementById('fpsValue').className = currentFps >= 30 ? 'value good' : currentFps >= 20 ? 'value warn' : 'value';
+    if (performance.memory) {
+      const mb = (performance.memory.usedJSHeapSize / 1048576).toFixed(0);
+      document.getElementById('memValue').textContent = mb + 'MB';
+    }
+  }
+  requestAnimationFrame(measureFps);
+}
+
+// --- 初始化 ---
+const elements = generateElements();
+document.getElementById('nodeCount').textContent = NODE_COUNT;
+document.getElementById('edgeCount').textContent = EDGE_COUNT;
+
+const layoutStart = performance.now();
+const cy = cytoscape({
+  container: document.getElementById('cy'),
+  elements: elements,
+  style: [
+    { selector: 'node', style: { 'label': 'data(label)', 'font-size': '6px', 'color': '#aaa', 'text-valign': 'bottom', 'text-halign': 'center', 'border-width': 0.5, 'border-color': 'rgba(255,255,255,0.3)', 'text-opacity': 0.5 } },
+    { selector: 'edge', style: { 'width': 0.5, 'line-color': 'rgba(255,255,255,0.06)', 'curve-style': 'haystack' } }
+  ],
+  layout: {
+    name: 'cose',
+    animate: false,
+    numIter: 300,
+    nodeRepulsion: () => 4000,
+    idealEdgeLength: () => 40,
+    gravity: 0.3
+  },
+  wheelSensitivity: 0.3,
+  minZoom: 0.1,
+  maxZoom: 3
+});
+
+cy.ready(() => {
+  const layoutEnd = performance.now();
+  const time = (layoutEnd - layoutStart).toFixed(0);
+  document.getElementById('layoutTime').textContent = time + 'ms';
+  document.getElementById('layoutTime').className = time < 2000 ? 'value good' : time < 5000 ? 'value warn' : 'value';
+  document.getElementById('status').textContent = '布局完成 — 拖拽/滚轮交互测试';
+  document.getElementById('status').style.opacity = '1';
+  setTimeout(() => { document.getElementById('status').style.opacity = '0'; }, 3000);
+});
+
+measureFps();
+
+function restartLayout() {
+  document.getElementById('status').textContent = '重新计算布局...';
+  document.getElementById('status').style.opacity = '1';
+  document.getElementById('layoutTime').textContent = '计算中...';
+  const start = performance.now();
+  cy.layout({ name: 'cose', animate: false, numIter: 300, nodeRepulsion: () => 4000, idealEdgeLength: () => 40, gravity: 0.3 }).run();
+  cy.ready(() => {
+    const end = performance.now();
+    document.getElementById('layoutTime').textContent = (end - start).toFixed(0) + 'ms';
+    document.getElementById('status').textContent = '布局完成';
+    setTimeout(() => { document.getElementById('status').style.opacity = '0'; }, 2000);
+  });
+}
+
+function resetView() { cy.fit(); cy.center(); }
+
+console.log('Cytoscape.js 性能测试已启动');
+console.log(`节点: ${NODE_COUNT}, 边: ${EDGE_COUNT}`);
+</script>
+</body>
+</html>
