@@ -150,14 +150,27 @@ function registerModelHandlers() {
 }
 
 function registerVoiceHandlers() {
-  const whisper = (() => {
-    try { return require('../services/whisper-processor').whisper; } catch { return null; }
+  const whisperModule = (() => {
+    try { return require('../services/whisper-processor'); } catch { return null; }
   })();
+  const whisper = whisperModule?.whisper;
 
-  ipcMain.handle('voice:init', async (_, config) => {
+  // Auto-detect whisper paths
+  const appRoot = path.join(__dirname, '..', '..', '..');
+  const exePath = path.join(appRoot, 'resources', 'whisper-cli.exe');
+  const modelPath = path.join(appRoot, 'resources', 'models', 'ggml-small.bin');
+  let whisperReady = false;
+
+  ipcMain.handle('voice:init', async () => {
     if (!whisper) return { success: false, error: 'Whisper module not available' };
+    if (whisperReady) return { success: true, status: whisper.status };
     try {
-      await whisper.init(config);
+      await whisperModule.init({
+        executablePath: exePath,
+        modelPath: modelPath,
+        debug: true,
+      });
+      whisperReady = true;
       return { success: true, status: whisper.status };
     } catch (e) {
       return { success: false, error: e.message };
