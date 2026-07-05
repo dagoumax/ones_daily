@@ -21,6 +21,8 @@ export default function VoiceButton({ onTaskCreated }) {
 
   const startRecording = useCallback(async () => {
     try {
+      // 先初始化 whisper（如果还没初始化）
+      await window.electronAPI?.voice.init();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
@@ -67,7 +69,7 @@ export default function VoiceButton({ onTaskCreated }) {
       };
       animate();
     } catch (e) {
-      console.error('Mic access denied:', e);
+      console.error('Voice start failed:', e);
       setStatus('error');
       setTimeout(() => setStatus('idle'), 2000);
     }
