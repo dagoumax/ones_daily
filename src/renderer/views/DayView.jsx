@@ -135,7 +135,7 @@ export default function DayView({ date, onDateChange }) {
         />
       )}
 
-      <style jsx>{`
+      <style>{`
         .day-view { height: 100%; display: flex; flex-direction: column; }
         .day-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
         .day-title { display: flex; align-items: center; gap: 12px; }

@@ -34,7 +34,7 @@ export default function VoiceButton() {
       {status === 'done' && '✅'}
       {status === 'error' && '❌'}
 
-      <style jsx>{`
+      <style>{`
         .voice-button {
           position: fixed;
           bottom: 24px;

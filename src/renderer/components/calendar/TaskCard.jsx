@@ -43,7 +43,7 @@ export default function TaskCard({ task, onClick, onComplete, style }) {
         </button>
       )}
 
-      <style jsx>{`
+      <style>{`
         .task-card {
           display: flex;
           align-items: stretch;

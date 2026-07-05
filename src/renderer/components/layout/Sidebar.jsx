@@ -38,7 +38,7 @@ export default function Sidebar({ currentView, onViewChange }) {
         </button>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .sidebar {
           width: 56px;
           display: flex;
