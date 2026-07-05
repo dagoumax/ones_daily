@@ -95,9 +95,18 @@ export default function VoiceButton({ onTaskCreated }) {
 
   const processAudio = async (blob) => {
     try {
-      const buf = await blob.arrayBuffer();
-      // Convert to base64 in chunks to avoid call stack overflow
-      const bytes = new Uint8Array(buf);
+      // Decode webm/opus to PCM using Web Audio API
+      const audioCtx = new AudioContext({ sampleRate: 16000 });
+      const arrayBuf = await blob.arrayBuffer();
+      const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+      audioCtx.close();
+
+      // Convert to 16-bit PCM mono 16kHz
+      const pcmData = audioBuf.getChannelData(0); // mono
+      const wavBuf = buildWav(pcmData, 16000);
+
+      // Convert to base64 in chunks
+      const bytes = new Uint8Array(wavBuf);
       const chunks = [];
       for (let i = 0; i < bytes.length; i += 8192) {
         chunks.push(String.fromCharCode(...bytes.slice(i, i + 8192)));
@@ -180,4 +189,48 @@ export default function VoiceButton({ onTaskCreated }) {
       `}</style>
     </div>
   );
+}
+
+function buildWav(samples, sampleRate) {
+  const numChannels = 1;
+  const bitsPerSample = 16;
+  const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+  const blockAlign = numChannels * bitsPerSample / 8;
+  const dataSize = samples.length * blockAlign;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buf);
+
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(view, 8, 'WAVE');
+
+  // fmt chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  // data chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // PCM samples
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+  return buf;
+}
+
+function writeString(view, offset, str) {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }

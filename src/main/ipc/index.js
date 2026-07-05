@@ -185,8 +185,8 @@ function registerVoiceHandlers() {
     try {
       const fs = require('fs');
       const os = require('os');
-      // Save as .ogg (webm is essentially ogg container, whisper supports it)
-      const tmpFile = path.join(os.tmpdir(), `voice-${Date.now()}.ogg`);
+      // Save as WAV (already decoded from webm in renderer)
+      const tmpFile = path.join(os.tmpdir(), `voice-${Date.now()}.wav`);
       fs.writeFileSync(tmpFile, Buffer.from(audioBase64, 'base64'));
       console.log('[IPC] Audio saved to:', tmpFile, 'size:', fs.statSync(tmpFile).size);
       const result = await whisperModule.whisper.transcribe(tmpFile);
