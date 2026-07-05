@@ -152,6 +152,24 @@ class WhisperProcessor extends EventEmitter {
     this._log('WhisperProcessor destroyed');
   }
 
+  /**
+   * 通过 stdin 管道转写音频 buffer（用于 webm 等格式）
+   * @param {Buffer} audioBuffer - 原始音频数据
+   * @returns {Promise<{text, confidence, duration}>}
+   */
+  async transcribeBuffer(audioBuffer) {
+    if (!this._modelLoaded) await this._loadModel();
+    return new Promise((resolve, reject) => {
+      this._queue.push({
+        type: 'buffer',
+        buffer: audioBuffer,
+        resolve,
+        reject,
+      });
+      this._processQueue();
+    });
+  }
+
   // ============================================================
   // 内部方法
   // ============================================================
@@ -195,22 +213,27 @@ class WhisperProcessor extends EventEmitter {
     }
 
     this._processing = true;
-    const { audioFilePath, options, resolve, reject } = this._queue.shift();
+    const item = this._queue.shift();
     const startTime = Date.now();
 
     try {
       this._status = 'processing';
-      const result = await this._runTranscribe(audioFilePath, options);
+      let result;
+      if (item.type === 'buffer') {
+        result = await this._runTranscribeStdin(item.buffer);
+      } else {
+        result = await this._runTranscribe(item.audioFilePath, item.options);
+      }
       const duration = Date.now() - startTime;
       this._consecutiveFailures = 0;
       this._status = 'ready';
-      resolve({ ...result, duration });
-      this.emit('transcribe:success', { audioFilePath, result, duration });
+      item.resolve({ ...result, duration });
+      this.emit('transcribe:success', { result, duration });
     } catch (err) {
       this._consecutiveFailures++;
       this._status = this._consecutiveFailures >= this._maxFailures ? 'error' : 'ready';
-      this.emit('transcribe:error', { audioFilePath, error: err.message });
-      reject(err);
+      this.emit('transcribe:error', { error: err.message });
+      item.reject(err);
     } finally {
       this._processing = false;
       // 处理队列中的下一个
@@ -299,6 +322,65 @@ class WhisperProcessor extends EventEmitter {
         this._currentProcess = null;
         reject(new Error(`Failed to spawn whisper: ${err.message}`));
       });
+    });
+  }
+
+  _runTranscribeStdin(audioBuffer) {
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-m', this.config.modelPath,
+        '-f', '-',           // stdin
+        '-nt',
+        '-otxt',
+        '-of', path.join(this.config.tempDir, 'whisper_output'),
+        '-l', 'auto',
+      ];
+
+      this._log('Spawning whisper (stdin):', this.config.executablePath, args.join(' '));
+      const proc = spawn(this.config.executablePath, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+
+      this._currentProcess = proc;
+
+      let stderr = '';
+      proc.stderr.on('data', (data) => {
+        stderr += data.toString();
+        this._log('whisper progress:', data.toString().trim());
+      });
+
+      const timeoutId = setTimeout(() => {
+        this._log('Transcribe timeout, killing process');
+        this._killCurrentProcess();
+        reject(new Error('Transcription timed out'));
+      }, this.config.timeout);
+
+      proc.on('close', (code) => {
+        clearTimeout(timeoutId);
+        this._currentProcess = null;
+        this._log(`whisper (stdin) exited with code ${code}, stderr length: ${stderr.length}`);
+
+        if (code === 0) {
+          const outputPath = path.join(this.config.tempDir, 'whisper_output.txt');
+          let text = '';
+          try { text = fs.readFileSync(outputPath, 'utf-8').trim(); } catch {}
+          try { fs.unlinkSync(outputPath); } catch {}
+          this._log(`Transcription result: "${text}"`);
+          resolve({ text, confidence: 0.85, raw: stderr });
+        } else {
+          reject(new Error(`Whisper exited with code ${code}`));
+        }
+      });
+
+      proc.on('error', (err) => {
+        clearTimeout(timeoutId);
+        this._currentProcess = null;
+        reject(new Error(`Failed to spawn whisper: ${err.message}`));
+      });
+
+      // Write audio buffer to stdin and close
+      proc.stdin.write(audioBuffer);
+      proc.stdin.end();
     });
   }
 

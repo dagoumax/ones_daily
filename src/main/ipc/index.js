@@ -183,14 +183,9 @@ function registerVoiceHandlers() {
   ipcMain.handle('voice:transcribe', async (_, audioBase64) => {
     if (!whisperModule || !whisperReady) return { text: '', error: 'Whisper not initialized' };
     try {
-      const fs = require('fs');
-      const os = require('os');
-      // Save as WAV (already decoded from webm in renderer)
-      const tmpFile = path.join(os.tmpdir(), `voice-${Date.now()}.wav`);
-      fs.writeFileSync(tmpFile, Buffer.from(audioBase64, 'base64'));
-      console.log('[IPC] Audio saved to:', tmpFile, 'size:', fs.statSync(tmpFile).size);
-      const result = await whisperModule.whisper.transcribe(tmpFile);
-      try { fs.unlinkSync(tmpFile); } catch {}
+      const audioBuffer = Buffer.from(audioBase64, 'base64');
+      console.log('[IPC] Audio buffer size:', audioBuffer.length, 'bytes');
+      const result = await whisperModule.whisper.transcribeBuffer(audioBuffer);
       return { text: result.text, confidence: result.confidence };
     } catch (e) {
       return { text: '', error: e.message };
