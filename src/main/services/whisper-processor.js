@@ -223,9 +223,9 @@ class WhisperProcessor extends EventEmitter {
       const args = [
         '-m', this.config.modelPath,
         '-f', audioFilePath,
-        '--no-timestamps',
-        '--output-txt',
-        '--output-file', path.join(this.config.tempDir, 'whisper_output'),
+        '-nt',
+        '-otxt',
+        '-of', path.join(this.config.tempDir, 'whisper_output'),
       ];
 
       if (options.language && options.language !== 'auto') {
