@@ -12,7 +12,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'AI效率管家',
+    title: 'AI Efficiency',
     backgroundColor: '#0f0f0f',
     frame: true,
     webPreferences: {
@@ -22,20 +22,32 @@ function createWindow() {
     },
   });
 
-  // 开发模式加载 webpack dev server，生产模式加载本地文件
   const isDev = !app.isPackaged;
+  const loadTarget = isDev ? 'http://localhost:9000' : path.join(__dirname, '..', '..', 'dist-renderer', 'index.html');
+  console.log(`[Window] Loading: ${loadTarget} (isDev=${isDev})`);
+
   if (isDev) {
-    mainWindow.loadURL('http://localhost:9000');
+    mainWindow.loadURL('http://localhost:9000').catch(err => {
+      console.error('[Window] loadURL failed:', err.message);
+    });
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist-renderer', 'index.html'));
   }
 
   mainWindow.on('closed', () => {
+    console.log('[Window] closed event fired');
     mainWindow = null;
   });
 
-  // 注册全局快捷键
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[Window] page loaded successfully');
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, code, desc, url) => {
+    console.error(`[Window] load failed: ${desc} (${code}) url=${url}`);
+  });
+
   globalShortcut.register('Ctrl+Shift+V', () => {
     mainWindow?.webContents.send('shortcut:voice-record');
   });
