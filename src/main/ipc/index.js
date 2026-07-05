@@ -57,6 +57,13 @@ function registerTaskHandlers() {
       [id, task.title, task.description || '', task.priority || 'P2', task.startTime || null, task.endTime || null, task.location || '',
        JSON.stringify(task.participants || []), JSON.stringify(task.tags || []),
        task.repeatRule ? JSON.stringify(task.repeatRule) : null, task.source || 'manual', now, now]);
+    // 桌面通知
+    try {
+      const { Notification } = require('electron');
+      if (Notification.isSupported()) {
+        new Notification({ title: '✅ 事项已创建', body: task.title, silent: true }).show();
+      }
+    } catch {}
     return dbGet('SELECT * FROM tasks WHERE id = ?', [id]);
   });
   ipcMain.handle('task:update', (_, id, updates) => {
@@ -143,8 +150,41 @@ function registerModelHandlers() {
 }
 
 function registerVoiceHandlers() {
-  ipcMain.handle('voice:transcribe', (_, audioPath) => ({ status: 'not_implemented', audioPath }));
-  ipcMain.handle('voice:getStatus', () => ({ state: 'not_initialized', modelLoaded: false }));
+  const whisper = (() => {
+    try { return require('../services/whisper-processor').whisper; } catch { return null; }
+  })();
+
+  ipcMain.handle('voice:init', async (_, config) => {
+    if (!whisper) return { success: false, error: 'Whisper module not available' };
+    try {
+      await whisper.init(config);
+      return { success: true, status: whisper.status };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('voice:transcribe', async (_, audioBase64) => {
+    if (!whisper) return { text: '', error: 'Whisper module not available' };
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const os = require('os');
+      const tmpFile = path.join(os.tmpdir(), `voice-${Date.now()}.wav`);
+      fs.writeFileSync(tmpFile, Buffer.from(audioBase64, 'base64'));
+      const result = await whisper.transcribe(tmpFile);
+      try { fs.unlinkSync(tmpFile); } catch {}
+      return { text: result.text, confidence: result.confidence };
+    } catch (e) {
+      return { text: '', error: e.message };
+    }
+  });
+
+  ipcMain.handle('voice:getStatus', () => {
+    if (!whisper) return { state: 'not_available', modelLoaded: false };
+    return whisper.status;
+  });
+
   ipcMain.handle('voice:speak', () => ({ status: 'not_implemented' }));
 }
 

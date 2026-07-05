@@ -53,7 +53,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 语音操作
   // ==========================================
   voice: {
-    transcribe: (audioPath) => ipcRenderer.invoke('voice:transcribe', audioPath),
+    init: (config) => ipcRenderer.invoke('voice:init', config),
+    transcribe: (audioBase64) => ipcRenderer.invoke('voice:transcribe', audioBase64),
     getStatus: () => ipcRenderer.invoke('voice:getStatus'),
     speak: (text, options) => ipcRenderer.invoke('voice:speak', text, options),
   },

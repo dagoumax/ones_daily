@@ -53,6 +53,26 @@ export default function DayView({ date, onDateChange }) {
     loadTasks();
   };
 
+  const handleDragEnd = async (task, deltaY) => {
+    if (!task.start_time) return;
+    const pxPerHour = 60; // 60px = 1 hour
+    const deltaMinutes = Math.round((deltaY / pxPerHour) * 60);
+    if (deltaMinutes === 0) return;
+    const start = new Date(task.start_time);
+    start.setMinutes(start.getMinutes() + deltaMinutes);
+    let end = task.end_time ? new Date(task.end_time) : null;
+    if (end) end.setMinutes(end.getMinutes() + deltaMinutes);
+    try {
+      await window.electronAPI?.tasks.update(task.id, {
+        startTime: start.toISOString(),
+        endTime: end ? end.toISOString() : null,
+      });
+      loadTasks();
+    } catch (e) {
+      console.error('Drag update failed:', e);
+    }
+  };
+
   const getCurrentTimePosition = () => {
     const now = new Date();
     const minutes = now.getHours() * 60 + now.getMinutes();
@@ -119,6 +139,7 @@ export default function DayView({ date, onDateChange }) {
                   task={task}
                   onClick={() => handleTaskClick(task)}
                   onComplete={() => handleComplete(task.id)}
+                  onDragEnd={(deltaY) => handleDragEnd(task, deltaY)}
                   style={getTaskPosition(task)}
                 />
               ))}

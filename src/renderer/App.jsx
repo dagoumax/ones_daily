@@ -18,7 +18,16 @@ export default function App() {
   const [currentView, setCurrentView] = useState('day');
   const [currentDate, setCurrentDate] = useState(new Date());
 
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => setRefreshKey(k => k + 1);
+
   const ViewComponent = VIEWS[currentView] || DayView;
+
+  const handleTaskCreated = () => {
+    setCurrentView('day');
+    setCurrentDate(new Date());
+    refresh();
+  };
 
   // 视图联动回调
   const handleDayClick = (newDate) => {
@@ -54,7 +63,7 @@ export default function App() {
           onMonthClick={handleMonthClick}
         />
       </main>
-      <VoiceButton />
+      <VoiceButton onTaskCreated={handleTaskCreated} />
     </div>
   );
 }

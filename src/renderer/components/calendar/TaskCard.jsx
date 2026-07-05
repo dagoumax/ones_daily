@@ -7,16 +7,44 @@ const PRIORITY_CONFIG = {
   P3: { color: 'var(--priority-p3)', label: '低优' },
 };
 
-export default function TaskCard({ task, onClick, onComplete, style }) {
+export default function TaskCard({ task, onClick, onComplete, onDragEnd, style }) {
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.P2;
   const isCompleted = task.status === 'completed';
   const isPast = task.end_time && new Date(task.end_time) < new Date() && !isCompleted;
+
+  const handleDragStart = (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', '');
+  };
+
+  const handleDrag = (e) => {
+    // Prevent default to allow drop
+    if (e.clientY === 0) return;
+  };
+
+  const handleDragEndEvent = (e) => {
+    const deltaY = e.clientY - (e.target.getBoundingClientRect?.().top || 0);
+    // Better approach: track start position
+    if (onDragEnd && e.screenY) {
+      const rect = e.target.closest('.task-area')?.getBoundingClientRect();
+      if (rect) {
+        const dropY = e.clientY - rect.top;
+        const startTop = parseFloat(e.target.style.top) || 0;
+        const deltaYPx = dropY - startTop;
+        onDragEnd(deltaYPx);
+      }
+    }
+  };
 
   return (
     <div
       className={`task-card ${isCompleted ? 'completed' : ''} ${isPast ? 'past' : ''}`}
       onClick={onClick}
       style={style}
+      draggable={!isCompleted}
+      onDragStart={handleDragStart}
+      onDrag={handleDrag}
+      onDragEnd={handleDragEndEvent}
     >
       <div className="task-priority-bar" style={{ background: priority.color }} />
       <div className="task-body">

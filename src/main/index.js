@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, Tray, Menu, Notification } = require('electron');
 const path = require('path');
 const { initDatabase, closeDatabase } = require('./database');
 const { registerIpcHandlers } = require('./ipc');
