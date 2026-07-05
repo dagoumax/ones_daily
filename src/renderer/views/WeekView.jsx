@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 
 const DAY_LABELS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
-export default function WeekView({ date, onDateChange }) {
+export default function WeekView({ date, onDateChange, onDayClick }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,7 +81,7 @@ export default function WeekView({ date, onDateChange }) {
             const dayTasks = tasksByDay[i] || [];
             const today = isToday(d);
             return (
-              <div key={i} className={`wv-col ${today ? 'wv-today' : ''}`}>
+              <div key={i} className={`wv-col ${today ? 'wv-today' : ''}`} onClick={() => onDayClick && onDayClick(d)}>
                 <div className="wv-col-header">
                   <span className="wv-day-label">{DAY_LABELS[i]}</span>
                   <span className="wv-day-date">{formatDay(d)}</span>
