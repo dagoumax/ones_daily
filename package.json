@@ -8,11 +8,10 @@
     "dev": "concurrently \"webpack serve --config webpack.renderer.js\" \"wait-on http://localhost:9000 && electron .\"",
     "build:renderer": "webpack --config webpack.renderer.js --mode production",
     "build": "npm run build:renderer && electron-builder",
-    "test": "jest",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "test": "jest"
   },
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
+    "sql.js": "^1.10.0",
     "cytoscape": "^3.30.0",
     "uuid": "^9.0.0"
   },
