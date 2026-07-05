@@ -23,29 +23,16 @@ function createWindow() {
   });
 
   const isDev = !app.isPackaged;
-  const loadTarget = isDev ? 'http://localhost:9000' : path.join(__dirname, '..', '..', 'dist-renderer', 'index.html');
-  console.log(`[Window] Loading: ${loadTarget} (isDev=${isDev})`);
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:9000').catch(err => {
-      console.error('[Window] loadURL failed:', err.message);
-    });
+    mainWindow.loadURL('http://localhost:9000');
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist-renderer', 'index.html'));
   }
 
   mainWindow.on('closed', () => {
-    console.log('[Window] closed event fired');
     mainWindow = null;
-  });
-
-  mainWindow.webContents.on('did-finish-load', () => {
-    console.log('[Window] page loaded successfully');
-  });
-
-  mainWindow.webContents.on('did-fail-load', (event, code, desc, url) => {
-    console.error(`[Window] load failed: ${desc} (${code}) url=${url}`);
   });
 
   globalShortcut.register('Ctrl+Shift+V', () => {
