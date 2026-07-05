@@ -82,7 +82,13 @@ export default function VoiceButton({ onTaskCreated }) {
   const processAudio = async (blob) => {
     try {
       const buf = await blob.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      // Convert to base64 in chunks to avoid call stack overflow
+      const bytes = new Uint8Array(buf);
+      const chunks = [];
+      for (let i = 0; i < bytes.length; i += 8192) {
+        chunks.push(String.fromCharCode(...bytes.slice(i, i + 8192)));
+      }
+      const base64 = btoa(chunks.join(''));
       const result = await window.electronAPI?.voice.transcribe(base64);
       if (result?.text) {
         await window.electronAPI?.tasks.create({
