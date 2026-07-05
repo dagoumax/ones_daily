@@ -14,10 +14,17 @@ export default function VoiceButton({ onTaskCreated }) {
 
   // 快捷键触发
   useEffect(() => {
-    const handler = () => { if (status === 'idle') startRecording(); };
+    const handler = () => {
+      // 使用 ref 避免闭包过期
+      if (mediaRecorderRef.current?.state === 'inactive' || !mediaRecorderRef.current) {
+        startRecordingRef.current?.();
+      }
+    };
     window.electronAPI?.on('shortcut:voice-record', handler);
     return () => window.electronAPI?.removeListener('shortcut:voice-record', handler);
-  }, [status]);
+  }, []); // 只注册一次
+
+  const startRecordingRef = useRef(null);
 
   const startRecording = useCallback(async () => {
     try {
@@ -74,6 +81,9 @@ export default function VoiceButton({ onTaskCreated }) {
       setTimeout(() => setStatus('idle'), 2000);
     }
   }, []);
+
+  // 保持 ref 同步
+  startRecordingRef.current = startRecording;
 
   const stopRecording = () => {
     mediaRecorderRef.current?.state === 'recording' && mediaRecorderRef.current?.stop();
