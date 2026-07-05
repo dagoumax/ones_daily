@@ -226,6 +226,7 @@ class WhisperProcessor extends EventEmitter {
         '-nt',
         '-otxt',
         '-of', path.join(this.config.tempDir, 'whisper_output'),
+        '-l', 'auto',
       ];
 
       if (options.language && options.language !== 'auto') {

@@ -32,7 +32,11 @@ export default function VoiceButton({ onTaskCreated }) {
       await window.electronAPI?.voice.init();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      const mr = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      // Try WAV first, fall back to webm
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/wav')) mimeType = 'audio/wav';
+      else if (MediaRecorder.isTypeSupported('audio/webm;codecs=pcm')) mimeType = 'audio/webm;codecs=pcm';
+      const mr = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mr;
       chunksRef.current = [];
 
