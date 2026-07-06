@@ -139,14 +139,45 @@ function registerModelHandlers() {
     return dbGet('SELECT * FROM model_configs WHERE id = ?', [id]);
   });
   ipcMain.handle('model:delete', (_, id) => { dbRun('DELETE FROM model_configs WHERE id = ?', [id]); return { success: true }; });
-  ipcMain.handle('model:testConnection', (_, id) => ({ status: 'not_implemented', id }));
+  ipcMain.handle('model:testConnection', async (_, id) => {
+    const model = dbGet('SELECT * FROM model_configs WHERE id = ?', [id]);
+    if (!model) return { success: false, error: '模型不存在' };
+
+    const startTime = Date.now();
+    try {
+      const response = await testModelConnection(model);
+      const latency = Date.now() - startTime;
+      return { success: true, latency, ...response };
+    } catch (e) {
+      const latency = Date.now() - startTime;
+      return { success: false, error: e.message, latency };
+    }
+  });
   ipcMain.handle('model:getBindings', () => dbAll('SELECT * FROM scene_bindings'));
   ipcMain.handle('model:setBinding', (_, scene, modelId) => {
     const id = uuidv4();
     dbRun("INSERT OR REPLACE INTO scene_bindings (id,scene,model_id,updated_at) VALUES (?,?,?,datetime('now','localtime'))", [id, scene, modelId]);
     return { success: true, scene, modelId };
   });
-  ipcMain.handle('model:getUsageStats', (_, period) => ({ status: 'not_implemented', period }));
+  ipcMain.handle('model:getUsageStats', (_, period = '7d') => {
+    const days = period === '30d' ? 30 : period === '90d' ? 90 : 7;
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const logs = dbAll(
+      'SELECT model_id, COUNT(*) as calls, SUM(prompt_tokens) as total_prompt, SUM(completion_tokens) as total_completion, SUM(cost_estimated) as total_cost, AVG(duration_ms) as avg_duration FROM usage_logs WHERE created_at >= ? GROUP BY model_id',
+      [since]
+    );
+    const total = dbGet(
+      'SELECT COUNT(*) as total_calls, SUM(cost_estimated) as total_cost FROM usage_logs WHERE created_at >= ?',
+      [since]
+    );
+    return {
+      period,
+      since,
+      models: logs,
+      totalCalls: total?.total_calls || 0,
+      totalCost: total?.total_cost || 0,
+    };
+  });
 }
 
 function registerVoiceHandlers() {
@@ -217,5 +248,58 @@ function registerSystemHandlers() {
 }
 
 function camelToSnake(str) { return str.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`); }
+
+// ============================================
+// 模型连接测试
+// ============================================
+async function testModelConnection(model) {
+  const https = require('https');
+  const http = require('http');
+  const url = require('url');
+
+  const parsedUrl = url.parse(model.endpoint);
+  const isHttps = parsedUrl.protocol === 'https:';
+  const transport = isHttps ? https : http;
+
+  const options = {
+    hostname: parsedUrl.hostname,
+    port: parsedUrl.port || (isHttps ? 443 : 80),
+    path: parsedUrl.path || '/v1/models',
+    method: 'GET',
+    timeout: 10000,
+    headers: {
+      'Authorization': `Bearer ${model.api_key_encrypted || ''}`,
+      'Content-Type': 'application/json',
+    },
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = transport.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          let modelName = model.model_identifier || '-';
+          try {
+            const data = JSON.parse(body);
+            if (data.data && data.data.length > 0) {
+              modelName = data.data.map(m => m.id).join(', ');
+            } else if (data.model) {
+              modelName = data.model;
+            }
+          } catch (_) {}
+          resolve({ models: modelName, statusCode: res.statusCode });
+        } else if (res.statusCode === 401 || res.statusCode === 403) {
+          reject(new Error(`认证失败 (HTTP ${res.statusCode})`));
+        } else {
+          reject(new Error(`请求失败 (HTTP ${res.statusCode})`));
+        }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('连接超时')); });
+    req.on('error', (e) => reject(new Error(`连接失败: ${e.message}`)));
+    req.end();
+  });
+}
 
 module.exports = { registerIpcHandlers };

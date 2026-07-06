@@ -41,14 +41,25 @@ export default function Sidebar({ currentView, onViewChange }) {
       </nav>
 
       <div className="sidebar-footer">
-        <button className="sidebar-item" title="知识库">
+        <button
+          className={`sidebar-item ${currentView === 'models' ? 'active' : ''}`}
+          onClick={() => onViewChange('models')}
+          title="模型管理"
+        >
+          <span className="sidebar-icon">🤖</span>
+          <span className="sidebar-label">模型管理</span>
+        </button>
+        <button className="sidebar-item" title="知识库（即将推出）">
           <span className="sidebar-icon">🧠</span>
+          <span className="sidebar-label">知识库</span>
         </button>
-        <button className="sidebar-item" title="图谱">
+        <button className="sidebar-item" title="图谱（即将推出）">
           <span className="sidebar-icon">🔗</span>
+          <span className="sidebar-label">图谱</span>
         </button>
-        <button className="sidebar-item" title="设置">
+        <button className="sidebar-item" title="设置（即将推出）">
           <span className="sidebar-icon">⚙️</span>
+          <span className="sidebar-label">设置</span>
         </button>
       </div>
 

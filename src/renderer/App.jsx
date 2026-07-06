@@ -5,6 +5,7 @@ import WeekView from './views/WeekView';
 import MonthView from './views/MonthView';
 import YearView from './views/YearView';
 import CreateView from './views/CreateView';
+import ModelView from './views/ModelView';
 import SearchBar from './components/calendar/SearchBar';
 
 const VIEWS = {
@@ -13,6 +14,7 @@ const VIEWS = {
   month: MonthView,
   year: YearView,
   create: CreateView,
+  models: ModelView,
 };
 
 export default function App() {
@@ -23,6 +25,7 @@ export default function App() {
 
   const ViewComponent = VIEWS[currentView] || DayView;
   const isCreateView = currentView === 'create';
+  const isCalendarView = ['day', 'week', 'month', 'year'].includes(currentView);
 
   const handleTaskCreated = () => {
     setCurrentView('day');
@@ -62,8 +65,8 @@ export default function App() {
         onViewChange={setCurrentView}
       />
       <main className="main-content">
-        {/* 创建页不显示搜索栏 */}
-        {!isCreateView && (
+        {/* 非日历视图不显示搜索栏 */}
+        {isCalendarView && (
           <SearchBar onSelect={handleSearchSelect} />
         )}
         <div key={isCreateView ? 'create' : refreshKey} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
