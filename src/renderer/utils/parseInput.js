@@ -47,7 +47,7 @@ const WEEKDAY_NAMES = {
 // ── 时间模式 ──────────────────────────────────────────────
 // "下午3点"、"15:00"、"3点半"、"15:30"、"3点15分"
 const TIME_PATTERN =
-  /(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})\s*[:：]\s*(\d{2})|(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})\s*点(半|(\d{1,2})分)?/g;
+  /(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})\s*[:：]\s*([\d一二三四五六七八九十两]{2})|(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})点(半|([\d一二三四五六七八九十两]{1,2})分)?/g;
 
 const PERIOD_OFFSET = {
   '凌晨': 0, '早上': 0, '上午': 0,
@@ -55,14 +55,14 @@ const PERIOD_OFFSET = {
 };
 
 // ── 日期时间连用 ──────────────────────────────────────────
-// "明天下午3点"、"后天15:30"
+// "明天下午3点"、"后天15:30"、"明天下午三点"
 const DATE_TIME_PATTERN =
-  /(今天|今日|明天|明日|后天|后日|大后天|昨天|昨日|前天|下?周[一二三四五六日天]|下?星期[一二三四五六日天])\s*(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})[:：](\d{2})|(今天|今日|明天|明日|后天|后日|大后天|昨天|昨日|前天|下?周[一二三四五六日天]|下?星期[一二三四五六日天])\s*(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})点(半|(\d{1,2})分)?/g;
+  /(今天|今日|明天|明日|后天|后日|大后天|昨天|昨日|前天|下?周[一二三四五六日天]|下?星期[一二三四五六日天])\s*(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})[:：]([\d一二三四五六七八九十两]{2})|(今天|今日|明天|明日|后天|后日|大后天|昨天|昨日|前天|下?周[一二三四五六日天]|下?星期[一二三四五六日天])\s*(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})点(半|([\d一二三四五六七八九十两]{1,2})分)?/g;
 
 // ── 时间范围 ──────────────────────────────────────────────
-// "3点到5点"、"15:00-16:00"、"3点-5点"
+// "3点到5点"、"15:00-16:00"、"3点-5点"、"下午三点到五点"
 const RANGE_PATTERN =
-  /(\d{1,2})[:：](\d{2})\s*[-~至到]\s*(\d{1,2})[:：](\d{2})|(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})点(?:半|(\d{1,2})分)?\s*[-~至到]\s*(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})点(?:半|(\d{1,2})分)?/;
+  /([\d一二三四五六七八九十两]{1,2})[:：]([\d一二三四五六七八九十两]{2})\s*[-~至到]\s*([\d一二三四五六七八九十两]{1,2})[:：]([\d一二三四五六七八九十两]{2})|(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})点(?:半|([\d一二三四五六七八九十两]{1,2})分)?\s*[-~至到]\s*(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})点(?:半|([\d一二三四五六七八九十两]{1,2})分)?/;
 
 // ── 绝对日期 ──────────────────────────────────────────────
 // "1月15日"、"2025-01-15"、"2025/01/15"
@@ -231,9 +231,36 @@ export function parseInput(rawText) {
   };
 }
 
-// ============================================================
-// 辅助函数
-// ============================================================
+// 中文数字映射
+const CN_NUMBERS = {
+  '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+  '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+  '0': 0, '1': 1, '2': 2, '3': 3, '4': 4,
+  '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+};
+
+function parseChineseNumber(str) {
+  if (!str) return 0;
+  const trimmed = str.trim();
+  // 纯阿拉伯数字
+  if (/^\d+$/.test(trimmed)) return parseInt(trimmed);
+  // 单个中文数字
+  if (CN_NUMBERS[trimmed] !== undefined) return CN_NUMBERS[trimmed];
+  // 处理 "十五"、"二十三" 等
+  let num = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    const c = trimmed[i];
+    const v = CN_NUMBERS[c];
+    if (v === undefined) continue;
+    if (v === 10) {
+      if (num === 0) num = 10;
+      else num = num * 10;
+    } else {
+      num = num * 10 + v;
+    }
+  }
+  return num;
+}
 
 function parseTimeString(str, now) {
   str = str.trim();
@@ -259,21 +286,21 @@ function parseTimeString(str, now) {
   }
 
   // 解析 HH:MM
-  let match = str.match(/^(\d{1,2})[:：](\d{2})$/);
+  let match = str.match(/^([\d一二三四五六七八九十两]{1,2})[:：]([\d一二三四五六七八九十两]{2})$/);
   if (match) {
-    let hour = parseInt(match[1]);
-    const min = parseInt(match[2]);
+    let hour = parseChineseNumber(match[1]);
+    const min = parseChineseNumber(match[2]);
     d.setHours(hour, min, 0, 0);
     return d;
   }
 
-  // 解析 "上午9点"、"下午3点半" 等
-  match = str.match(/^(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})点(半|(\d{1,2})分)?$/);
+  // 解析 "上午9点"、"下午3点半"、"下午三点" 等
+  match = str.match(/^(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})点(半|([\d一二三四五六七八九十两]{1,2})分)?$/);
   if (match) {
     const period = match[1] || '';
-    let hour = parseInt(match[2]);
+    let hour = parseChineseNumber(match[2]);
     const isHalf = match[3] === '半';
-    const extraMin = match[4] ? parseInt(match[4]) : 0;
+    const extraMin = match[4] ? parseChineseNumber(match[4]) : 0;
 
     // 处理时段偏移
     if (period === '下午' || period === '晚上') {
@@ -297,19 +324,19 @@ function extractFirstTime(text, now) {
   const d = new Date(now);
 
   // HH:MM
-  let match = text.match(/(\d{1,2})[:：](\d{2})/);
+  let match = text.match(/([\d一二三四五六七八九十两]{1,2})[:：]([\d一二三四五六七八九十两]{2})/);
   if (match) {
-    d.setHours(parseInt(match[1]), parseInt(match[2]), 0, 0);
+    d.setHours(parseChineseNumber(match[1]), parseChineseNumber(match[2]), 0, 0);
     return { time: d, matched: match[0] };
   }
 
   // X点/X点半/X点X分
-  match = text.match(/(上午|下午|晚上|早上|中午|凌晨)?\s*(\d{1,2})点(半|(\d{1,2})分)?/);
+  match = text.match(/(上午|下午|晚上|早上|中午|凌晨)?\s*([\d一二三四五六七八九十两]{1,2})点(半|([\d一二三四五六七八九十两]{1,2})分)?/);
   if (match) {
     const period = match[1] || '';
-    let hour = parseInt(match[2]);
+    let hour = parseChineseNumber(match[2]);
     const isHalf = match[3] === '半';
-    const extraMin = match[4] ? parseInt(match[4]) : 0;
+    const extraMin = match[4] ? parseChineseNumber(match[4]) : 0;
 
     if ((period === '下午' || period === '晚上') && hour < 12) hour += 12;
     else if (period === '中午' && hour < 12) hour += 12;

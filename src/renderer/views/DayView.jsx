@@ -174,7 +174,7 @@ export default function DayView({ date, onDateChange }) {
         .time-ruler { width: 56px; flex-shrink: 0; padding-top: 12px; }
         .time-tick { height: 60px; position: relative; border-top: 1px solid var(--border-default); }
         .time-tick:first-child { border-top: none; }
-        .time-label { position: absolute; top: -9px; right: 8px; font-size: 11px; color: var(--text-muted); }
+        .time-label { position: absolute; top: -9px; right: 8px; font-size: 11px; color: var(--text-muted); background: var(--bg-primary); padding: 2px 4px; border-radius: 2px; z-index: 2; }
         .task-area { flex: 1; position: relative; padding-top: 12px; }
         .now-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--danger); z-index: 10; pointer-events: none; }
         .now-line::before { content: ''; position: absolute; left: -6px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
