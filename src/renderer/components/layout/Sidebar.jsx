@@ -110,9 +110,10 @@ export default function Sidebar({ currentView, onViewChange }) {
         .sidebar-item {
           display: flex;
           align-items: center;
+          justify-content: center;
           gap: 12px;
           width: 100%;
-          padding: 10px 12px;
+          padding: 10px 8px;
           border: none;
           border-radius: 8px;
           background: transparent;
@@ -122,6 +123,13 @@ export default function Sidebar({ currentView, onViewChange }) {
           font-size: 13px;
           white-space: nowrap;
           overflow: hidden;
+        }
+        .sidebar:hover .sidebar-item {
+          justify-content: flex-start;
+          padding: 10px 12px;
+        }
+        .sidebar:not(:hover) .sidebar-label {
+          display: none;
         }
         .sidebar-item:hover {
           background: var(--bg-surface);
