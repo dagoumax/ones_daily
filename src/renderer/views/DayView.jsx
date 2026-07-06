@@ -169,13 +169,13 @@ export default function DayView({ date, onDateChange }) {
         .day-title h1 { font-size: 20px; font-weight: 600; color: var(--text-primary); }
         .today-badge { font-size: 11px; background: var(--accent); color: #000; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
         .day-actions { display: flex; gap: 8px; }
-        .timeline { flex: 1; overflow-y: auto; padding-top: 16px; }
-        .timeline-body { display: flex; position: relative; min-height: 1440px; }
-        .time-ruler { width: 56px; flex-shrink: 0; }
+        .timeline { flex: 1; overflow-y: auto; }
+        .timeline-body { display: flex; position: relative; min-height: 1440px; margin-top: 12px; }
+        .time-ruler { width: 56px; flex-shrink: 0; padding-top: 12px; }
         .time-tick { height: 60px; position: relative; border-top: 1px solid var(--border-default); }
         .time-tick:first-child { border-top: none; }
         .time-label { position: absolute; top: -9px; right: 8px; font-size: 11px; color: var(--text-muted); }
-        .task-area { flex: 1; position: relative; }
+        .task-area { flex: 1; position: relative; padding-top: 12px; }
         .now-line { position: absolute; left: 0; right: 0; height: 2px; background: var(--danger); z-index: 10; pointer-events: none; }
         .now-line::before { content: ''; position: absolute; left: -6px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
         .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0; color: var(--text-secondary); }
