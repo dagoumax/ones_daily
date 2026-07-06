@@ -262,12 +262,23 @@ async function testModelConnection(model) {
   const transport = isHttps ? https : http;
 
   const isAnthropic = parsedUrl.hostname.includes('anthropic');
+  const isDeepSeek = parsedUrl.hostname.includes('deepseek');
   const basePath = (parsedUrl.path || '/').replace(/\/$/, '');
-  const path = isAnthropic
-    ? '/v1/messages'
-    : /\/v1$/.test(basePath) || /\/v1beta$/.test(basePath)
-      ? basePath + '/chat/completions'
-      : basePath + '/v1/chat/completions';
+
+  // 各厂商 chat completions 路径不同
+  let path;
+  if (isAnthropic) {
+    path = '/v1/messages';
+  } else if (isDeepSeek) {
+    // DeepSeek: /chat/completions (不带 /v1)
+    path = basePath + '/chat/completions';
+  } else if (/\/v1$/.test(basePath) || /\/v1beta$/.test(basePath)) {
+    // 已含 /v1 或 /v1beta 的 endpoint
+    path = basePath + '/chat/completions';
+  } else {
+    // 默认 OpenAI 兼容路径
+    path = basePath + '/v1/chat/completions';
+  }
 
   const postData = JSON.stringify(isAnthropic ? {
     model: model.model_identifier || 'claude-sonnet-5',
