@@ -67,20 +67,9 @@ export default function TaskForm({ onSubmit, onClose, initialData }) {
       </form>
 
       <style>{`
-        .modal-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.5);
-          display: flex; align-items: center; justify-content: center; z-index: 500;
-        }
-        .task-form {
-          background: var(--bg-secondary); border-radius: 12px; padding: 24px;
-          width: 420px; max-width: 90vw; display: flex; flex-direction: column; gap: 14px;
-          border: 1px solid var(--border-default);
-        }
-        .task-form h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+        .task-form { width: 420px; }
         .form-row { display: flex; align-items: center; gap: 10px; }
-        .form-row label { width: 64px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; }
-        .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-        textarea.input { resize: vertical; min-height: 60px; }
+        .form-row label { width: 64px; font-size: var(--text-sm); color: var(--text-secondary); flex-shrink: 0; }
       `}</style>
     </div>
   );

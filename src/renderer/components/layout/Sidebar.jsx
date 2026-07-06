@@ -95,7 +95,7 @@ export default function Sidebar({ currentView, onViewChange }) {
           background: var(--accent) !important;
           color: #000 !important;
           font-weight: 600;
-          border-radius: 10px !important;
+          border-radius: var(--radius-md) !important;
         }
         .sidebar-create-btn:hover {
           filter: brightness(1.1);
@@ -126,12 +126,12 @@ export default function Sidebar({ currentView, onViewChange }) {
           width: 100%;
           padding: 10px 8px;
           border: none;
-          border-radius: 8px;
+          border-radius: var(--radius-md);
           background: transparent;
           color: var(--text-secondary);
           cursor: pointer;
           transition: all 0.15s ease;
-          font-size: 13px;
+          font-size: var(--text-sm);
           white-space: nowrap;
           overflow: hidden;
         }

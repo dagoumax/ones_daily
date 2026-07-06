@@ -173,9 +173,9 @@ export default function VoiceButton({ onTaskCreated }) {
           box-shadow: 0 4px 16px rgba(0,0,0,0.3); transition: all 0.2s ease;
         }
         .voice-button:hover { transform: scale(1.1); box-shadow: 0 6px 20px rgba(0,0,0,0.4); }
-        .voice-waveform { display: flex; align-items: flex-end; gap: 3px; padding: 8px 12px; background: var(--bg-surface); border-radius: 8px; }
-        .voice-bar { width: 4px; background: var(--danger); border-radius: 2px; transition: height 0.1s ease; min-height: 4px; }
-        .voice-timer { font-size: 12px; color: var(--text-secondary); background: var(--bg-surface); padding: 4px 10px; border-radius: 6px; }
+        .voice-waveform { display: flex; align-items: flex-end; gap: 3px; padding: 8px 12px; background: var(--bg-surface); border-radius: var(--radius-md); }
+        .voice-bar { width: 4px; background: var(--danger); border-radius: var(--radius-sm); transition: height 0.1s ease; min-height: 4px; }
+        .voice-timer { font-size: 12px; color: var(--text-secondary); background: var(--bg-surface); padding: 4px 10px; border-radius: var(--radius-md); }
         @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(233,69,96,0.4); } 50% { box-shadow: 0 0 0 12px rgba(233,69,96,0); } }
       `}</style>
     </div>

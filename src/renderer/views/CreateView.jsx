@@ -318,13 +318,13 @@ export default function CreateView({ date, onCreated, onCancel }) {
           text-align: center;
         }
         .create-header h1 {
-          font-size: 22px;
+          font-size: var(--text-xl);
           font-weight: 600;
           color: var(--text-primary);
           margin-bottom: 6px;
         }
         .create-subtitle {
-          font-size: 13px;
+          font-size: var(--text-sm);
           color: var(--text-muted);
         }
         .create-input-area {
@@ -335,10 +335,10 @@ export default function CreateView({ date, onCreated, onCancel }) {
           padding: 16px;
           padding-right: 56px;
           background: var(--bg-surface);
-          border: 2px solid var(--border-default);
-          border-radius: 12px;
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-lg);
           color: var(--text-primary);
-          font-size: 15px;
+          font-size: var(--text-base);
           font-family: inherit;
           line-height: 1.6;
           resize: vertical;
@@ -351,7 +351,7 @@ export default function CreateView({ date, onCreated, onCancel }) {
         }
         .create-textarea::placeholder {
           color: var(--text-muted);
-          font-size: 13px;
+          font-size: var(--text-sm);
           line-height: 1.5;
         }
         .create-voice-btn {
@@ -363,11 +363,11 @@ export default function CreateView({ date, onCreated, onCancel }) {
           gap: 6px;
           padding: 8px 14px;
           border: 1px solid var(--border-default);
-          border-radius: 20px;
+          border-radius: var(--radius-md);
           background: var(--bg-secondary);
           color: var(--text-secondary);
           cursor: pointer;
-          font-size: 13px;
+          font-size: var(--text-sm);
           font-family: inherit;
           transition: all 0.2s;
         }
@@ -384,13 +384,13 @@ export default function CreateView({ date, onCreated, onCancel }) {
           opacity: 0.5;
           cursor: not-allowed;
         }
-        .voice-icon { font-size: 16px; }
+        .voice-icon { font-size: var(--text-lg); }
         .voice-label { font-size: 12px; }
 
         .create-preview {
           background: var(--bg-surface);
           border: 1px solid var(--border-default);
-          border-radius: 12px;
+          border-radius: var(--radius-lg);
           overflow: hidden;
         }
         .preview-header {
@@ -421,7 +421,7 @@ export default function CreateView({ date, onCreated, onCancel }) {
           color: var(--text-muted);
         }
         .preview-value {
-          font-size: 14px;
+          font-size: var(--text-base);
           color: var(--text-primary);
         }
         .preview-title {
@@ -432,13 +432,13 @@ export default function CreateView({ date, onCreated, onCancel }) {
           font-style: normal;
         }
         .time-badge {
-          font-size: 13px;
+          font-size: var(--text-sm);
           color: var(--accent);
         }
         .priority-badge {
           display: inline-block;
           padding: 2px 10px;
-          border-radius: 10px;
+          border-radius: var(--radius-md);
           font-size: 12px;
           font-weight: 600;
         }
@@ -448,7 +448,7 @@ export default function CreateView({ date, onCreated, onCancel }) {
           margin-right: 6px;
           background: var(--bg-secondary);
           border: 1px solid var(--border-default);
-          border-radius: 6px;
+          border-radius: var(--radius-md);
           font-size: 12px;
           color: var(--text-secondary);
         }
@@ -469,8 +469,8 @@ export default function CreateView({ date, onCreated, onCancel }) {
         .create-tips code {
           background: var(--bg-surface);
           padding: 1px 6px;
-          border-radius: 4px;
-          font-size: 11px;
+          border-radius: var(--radius-sm);
+          font-size: var(--text-xs);
           color: var(--accent);
         }
         @keyframes voice-pulse {

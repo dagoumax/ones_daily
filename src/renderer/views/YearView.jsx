@@ -78,13 +78,13 @@ export default function YearView({ date, onDateChange, onMonthClick }) {
         .year-view { height: 100%; display: flex; flex-direction: column; }
         .yv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
         .yv-title { display: flex; align-items: center; gap: 12px; }
-        .yv-title h1 { font-size: 18px; font-weight: 600; min-width: 100px; text-align: center; }
+        .yv-title h1 { font-size: var(--text-lg); font-weight: 600; min-width: 100px; text-align: center; }
         .yv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; flex: 1; }
-        .yv-month { background: var(--bg-surface); border-radius: 8px; padding: 20px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; min-height: 100px; }
+        .yv-month { background: var(--bg-surface); border-radius: var(--radius-md); padding: 20px; cursor: pointer; transition: all 0.15s; display: flex; flex-direction: column; gap: 8px; align-items: center; justify-content: center; min-height: 100px; }
         .yv-month:hover { background: var(--bg-elevated); }
         .yv-current { border: 1px solid var(--accent); }
-        .yv-month-label { font-size: 16px; font-weight: 600; color: var(--text-primary); }
-        .yv-month-count { font-size: 13px; color: var(--text-muted); }
+        .yv-month-label { font-size: var(--text-lg); font-weight: 600; color: var(--text-primary); }
+        .yv-month-count { font-size: var(--text-sm); color: var(--text-muted); }
       `}</style>
     </div>
   );

@@ -26,6 +26,13 @@ module.exports = {
         test: /\.css$/,
         use: ['style-loader', 'css-loader'],
       },
+      {
+        test: /\.svg$/,
+        type: 'asset/resource',
+        generator: {
+          filename: 'icons/[name][ext]',
+        },
+      },
     ],
   },
   resolve: {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import BrandIcon from '../components/common/BrandIcon';
 
 const MODEL_TYPES = [
   { value: 'openai', label: 'OpenAI 兼容' },
@@ -8,40 +9,55 @@ const MODEL_TYPES = [
 
 const INITIAL_FORM = { name: '', type: 'openai', endpoint: '', apiKeyEncrypted: '', modelIdentifier: '' };
 
-// 预设主流模型 — 用户只需选模型 + 填 Key（数据截至 2026.07 来自官网）
+// 预设主流模型 — 用户只需选模型 + 填 Key
+// 数据来源：各厂商官方文档（2026.07 验证）
+// OpenAI: https://platform.openai.com/docs/models
+// Anthropic: https://docs.anthropic.com/en/docs/about-claude/models
+// Google: https://ai.google.dev/models/gemini
+// DeepSeek: https://api.deepseek.com
+// 智谱: https://docs.bigmodel.cn/cn/guide/start/model-overview
+// 通义千问: https://help.aliyun.com/zh/model-studio/models
+// Kimi: https://platform.moonshot.cn/docs
+// MiMo: https://api.mimo.mi.com
 const PRESET_MODELS = [
-  // OpenAI 系列
-  { id: 'gpt-5.5',       name: 'GPT-5.5',        icon: '🧠', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-5.5',             color: '#10a37f' },
-  { id: 'gpt-5.4',       name: 'GPT-5.4',        icon: '⚡', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-5.4',             color: '#10a37f' },
-  { id: 'gpt-5.4-mini',  name: 'GPT-5.4 Mini',   icon: '💨', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-5.4-mini',        color: '#10a37f' },
+  // ── OpenAI ──
+  { id: 'gpt-5.5',       name: 'GPT-5.5',         brand: 'openai',    type: 'openai', endpoint: 'https://api.openai.com/v1',        model: 'gpt-5.5',             color: '#10a37f' },
+  { id: 'gpt-5.4',       name: 'GPT-5.4',         brand: 'openai',    type: 'openai', endpoint: 'https://api.openai.com/v1',        model: 'gpt-5.4',             color: '#10a37f' },
+  { id: 'gpt-5.4-mini',  name: 'GPT-5.4 Mini',    brand: 'openai',    type: 'openai', endpoint: 'https://api.openai.com/v1',        model: 'gpt-5.4-mini',        color: '#10a37f' },
 
-  // Anthropic Claude
-  { id: 'claude-opus-4.8', name: 'Claude Opus 4.8', icon: '🎭', type: 'openai', endpoint: 'https://api.anthropic.com',    model: 'claude-opus-4-8',     color: '#d97706' },
-  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', icon: '🎨', type: 'openai', endpoint: 'https://api.anthropic.com',    model: 'claude-sonnet-5',     color: '#d97706' },
+  // ── Anthropic Claude ──
+  { id: 'claude-fable-5',  name: 'Claude Fable 5',   brand: 'anthropic', type: 'openai', endpoint: 'https://api.anthropic.com/v1', model: 'claude-fable-5',      color: '#d97706' },
+  { id: 'claude-opus-4.8', name: 'Claude Opus 4.8',  brand: 'anthropic', type: 'openai', endpoint: 'https://api.anthropic.com/v1', model: 'claude-opus-4-8',     color: '#d97706' },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5',  brand: 'anthropic', type: 'openai', endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-5',     color: '#d97706' },
 
-  // Google Gemini
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', icon: '🌐', type: 'openai', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-3.5-flash', color: '#4285f4' },
+  // ── Google Gemini ──
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', brand: 'google',   type: 'openai', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-3.5-flash',     color: '#4285f4' },
+  { id: 'gemini-3.1-pro',   name: 'Gemini 3.1 Pro',   brand: 'google',   type: 'openai', endpoint: 'https://generativelanguage.googleapis.com/v1beta', model: 'gemini-3.1-pro-preview', color: '#4285f4' },
 
-  // DeepSeek
-  { id: 'deepseek-v4-pro',  name: 'DeepSeek V4 Pro',  icon: '🐋', type: 'openai', endpoint: 'https://api.deepseek.com',     model: 'deepseek-v4-pro',    color: '#4f46e5' },
-  { id: 'deepseek-v4-flash',name: 'DeepSeek V4 Flash',icon: '⚡', type: 'openai', endpoint: 'https://api.deepseek.com',     model: 'deepseek-v4-flash',  color: '#4f46e5' },
+  // ── DeepSeek ──
+  { id: 'deepseek-v4-pro',  name: 'DeepSeek V4 Pro',  brand: 'deepseek',  type: 'openai', endpoint: 'https://api.deepseek.com',     model: 'deepseek-v4-pro',    color: '#4f46e5' },
+  { id: 'deepseek-v4-flash',name: 'DeepSeek V4 Flash',brand: 'deepseek',  type: 'openai', endpoint: 'https://api.deepseek.com',     model: 'deepseek-v4-flash',  color: '#4f46e5' },
 
-  // 阿里通义千问 Qwen3
-  { id: 'qwen3-plus',   name: '通义千问 Qwen3',   icon: '☁️', type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-plus',  color: '#6366f1' },
+  // ── 阿里通义千问 ──
+  { id: 'qwen3.7-max',   name: 'Qwen3.7 Max',     brand: 'qwen',       type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3.7-max',   color: '#6366f1' },
+  { id: 'qwen3.7-plus',  name: 'Qwen3.7 Plus',    brand: 'qwen',       type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3.7-plus',  color: '#6366f1' },
+  { id: 'qwen3.6-flash', name: 'Qwen3.6 Flash',   brand: 'qwen',       type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3.6-flash', color: '#6366f1' },
 
-  // 智谱 GLM-4.7
-  { id: 'glm-4.7',      name: '智谱 GLM-4.7',    icon: '🔮', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7',         color: '#059669' },
-  { id: 'glm-4.7-flash',name: 'GLM-4.7 FlashX',  icon: '💨', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7-flashx',  color: '#059669' },
+  // ── 智谱 GLM ──
+  { id: 'glm-5.2',       name: 'GLM-5.2',         brand: 'chatglm',    type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.2',          color: '#059669' },
+  { id: 'glm-4.7',       name: 'GLM-4.7',         brand: 'chatglm',    type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7',          color: '#059669' },
+  { id: 'glm-4.7-flashx',name: 'GLM-4.7 FlashX',  brand: 'chatglm',    type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7-flashx',   color: '#059669' },
 
-  // Kimi K2.6 (月之暗面)
-  { id: 'kimi-k2.6',    name: 'Kimi K2.6',       icon: '🌙', type: 'openai', endpoint: 'https://api.moonshot.cn/v1',       model: 'kimi-k2.6',          color: '#1e1e1e' },
+  // ── Kimi（月之暗面）──
+  { id: 'kimi-k2.7-code', name: 'Kimi K2.7 Code',  brand: 'moonshot',   type: 'openai', endpoint: 'https://api.moonshot.cn/v1',       model: 'kimi-k2.7-code',     color: '#1e1e1e' },
+  { id: 'kimi-k2.6',      name: 'Kimi K2.6',       brand: 'moonshot',   type: 'openai', endpoint: 'https://api.moonshot.cn/v1',       model: 'kimi-k2.6',          color: '#1e1e1e' },
 
-  // 小米 MiMo
-  { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro',   icon: '🔥', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5-pro',      color: '#ff6900' },
-  { id: 'mimo-v2.5',     name: 'MiMo V2.5',       icon: '📱', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5',          color: '#ff6900' },
+  // ── 小米 MiMo ──
+  { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro',   brand: 'xiaomimimo', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5-pro',      color: '#ff6900' },
+  { id: 'mimo-v2.5',     name: 'MiMo V2.5',       brand: 'xiaomimimo', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5',          color: '#ff6900' },
 
-  // 本地 Ollama
-  { id: 'ollama',       name: 'Ollama 本地',      icon: '🦙', type: 'ollama', endpoint: 'http://localhost:11434',           model: 'llama3.1',           color: '#f59e0b' },
+  // ── 本地 Ollama ──
+  { id: 'ollama',       name: 'Ollama 本地',      brand: 'ollama',     type: 'ollama', endpoint: 'http://localhost:11434',           model: 'llama3.1',           color: '#f59e0b' },
 ];
 
 export default function ModelView() {
@@ -194,7 +210,9 @@ export default function ModelView() {
                 onClick={() => { setQuickModel(p); setQuickKey(''); }}
                 style={{ '--card-color': p.color }}
               >
-                <span className="mv-quick-icon">{p.icon}</span>
+                <span className="mv-quick-icon">
+                  <BrandIcon brand={p.brand} size={18} color={p.color} />
+                </span>
                 <span className="mv-quick-name">{p.name}</span>
                 {configured && <span className="mv-quick-check">✓</span>}
               </button>
@@ -206,7 +224,7 @@ export default function ModelView() {
         {quickModel && (
           <div className="mv-quick-panel">
             <div className="mv-quick-panel-header">
-              <span>{quickModel.icon} {quickModel.name}</span>
+              <span><BrandIcon brand={quickModel.brand} size={18} color={quickModel.color} /> {quickModel.name}</span>
               <span className="mv-quick-endpoint">{quickModel.endpoint}</span>
             </div>
             <div className="mv-quick-panel-body">
@@ -329,67 +347,59 @@ export default function ModelView() {
       <style>{`
         .model-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
         .mv-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; flex-shrink: 0; }
-        .mv-header h1 { font-size: 20px; font-weight: 600; }
-        .mv-subtitle { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .mv-header h1 { font-size: var(--text-xl); font-weight: 600; }
+        .mv-subtitle { font-size: var(--text-sm); color: var(--text-muted); margin-top: 4px; }
         .mv-stats { display: flex; gap: 16px; margin-bottom: 20px; flex-shrink: 0; }
-        .mv-stat-item { flex: 1; background: var(--bg-surface); border-radius: 8px; padding: 14px; text-align: center; }
-        .mv-stat-num { display: block; font-size: 22px; font-weight: 700; color: var(--accent); }
+        .mv-stat-item { flex: 1; background: var(--bg-surface); border-radius: var(--radius-md); padding: 14px; text-align: center; }
+        .mv-stat-num { display: block; font-size: var(--text-xl); font-weight: 700; color: var(--accent); }
         .mv-stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
         /* 快捷配置 */
         .mv-quick-section { margin-bottom: 20px; flex-shrink: 0; }
-        .mv-quick-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .mv-quick-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
         .mv-quick-hint { font-size: 12px; font-weight: 400; color: var(--text-muted); }
         .mv-quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
         .mv-quick-card {
           display: flex; align-items: center; gap: 8px;
           padding: 10px 12px;
-          border: 1px solid var(--border-default); border-radius: 10px;
+          border: 1px solid var(--border-default); border-radius: var(--radius-md);
           background: var(--bg-surface); color: var(--text-secondary);
-          cursor: pointer; font-size: 13px; font-family: inherit;
+          cursor: pointer; font-size: var(--text-sm); font-family: inherit;
           transition: all 0.15s; position: relative;
         }
         .mv-quick-card:hover { border-color: var(--card-color, var(--accent)); color: var(--text-primary); background: var(--bg-elevated); }
         .mv-quick-card.mv-quick-selected { border-color: var(--card-color, var(--accent)); box-shadow: inset 0 0 0 1px var(--card-color, var(--accent)); }
         .mv-quick-card.mv-quick-configured { opacity: 0.6; }
-        .mv-quick-icon { font-size: 18px; flex-shrink: 0; }
+        .mv-quick-icon { display: flex; align-items: center; flex-shrink: 0; }
         .mv-quick-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .mv-quick-check { position: absolute; top: 4px; right: 6px; font-size: 10px; color: var(--success); }
+        .mv-quick-check { position: absolute; top: 4px; right: 6px; font-size: var(--text-xs); color: var(--success); }
         .mv-quick-panel {
           margin-top: 10px; padding: 14px;
           background: var(--bg-surface); border: 1px solid var(--border-default);
-          border-radius: 10px; border-left: 3px solid var(--card-color, var(--accent));
+          border-radius: var(--radius-md); border-left: 3px solid var(--card-color, var(--accent));
         }
-        .mv-quick-panel-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; font-weight: 600; }
-        .mv-quick-endpoint { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+        .mv-quick-panel-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: var(--text-base); font-weight: 600; }
+        .mv-quick-endpoint { font-size: var(--text-xs); color: var(--text-muted); font-weight: 400; }
         .mv-quick-panel-body { display: flex; gap: 8px; align-items: center; }
         .mv-quick-panel-body .input { flex: 1; }
         .mv-quick-panel-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
         .mv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-        .mv-card { background: var(--bg-surface); border-radius: 10px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; transition: background 0.15s; }
+        .mv-card { background: var(--bg-surface); border-radius: var(--radius-md); padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; transition: background 0.15s; }
         .mv-card:hover { background: var(--bg-elevated); }
         .mv-card-main { flex: 1; min-width: 0; }
         .mv-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
-        .mv-card-header h3 { font-size: 14px; font-weight: 600; }
-        .mv-type-badge { font-size: 11px; padding: 1px 8px; border-radius: 10px; font-weight: 500; }
+        .mv-card-header h3 { font-size: var(--text-base); font-weight: 600; }
+        .mv-type-badge { font-size: var(--text-xs); padding: 1px 8px; border-radius: var(--radius-md); font-weight: 500; }
         .mv-type-openai { background: rgba(74, 222, 128, 0.15); color: var(--success); }
         .mv-type-ollama { background: rgba(79, 195, 247, 0.15); color: var(--accent); }
         .mv-type-custom { background: rgba(107, 114, 128, 0.15); color: var(--text-muted); }
-        .mv-status { font-size: 11px; padding: 1px 8px; border-radius: 10px; }
+        .mv-status { font-size: var(--text-xs); padding: 1px 8px; border-radius: var(--radius-md); }
         .mv-ok { background: rgba(74, 222, 128, 0.1); color: var(--success); }
         .mv-fail { background: rgba(233, 69, 96, 0.1); color: var(--danger); }
         .mv-card-meta { font-size: 12px; color: var(--text-muted); display: flex; gap: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .mv-card-actions { display: flex; gap: 6px; flex-shrink: 0; }
-        .btn-sm { font-size: 12px !important; padding: 4px 10px !important; }
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 0; color: var(--text-secondary); }
-        .empty-state p { margin-top: 12px; font-size: 16px; }
-        .empty-hint { font-size: 13px !important; color: var(--text-muted); }
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 500; }
-        .task-form { background: var(--bg-secondary); border-radius: 12px; padding: 24px; width: 440px; max-width: 90vw; display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--border-default); }
-        .task-form h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
-        .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-        select.input { width: 100%; cursor: pointer; }
+        .task-form { width: 440px; }
       `}</style>
     </div>
   );

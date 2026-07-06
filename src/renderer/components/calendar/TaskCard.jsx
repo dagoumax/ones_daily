@@ -90,7 +90,7 @@ export default function TaskCard({ task, onClick, onComplete, onDelete, onDragEn
           display: flex;
           align-items: stretch;
           background: var(--bg-surface);
-          border-radius: 6px;
+          border-radius: var(--radius-md);
           overflow: hidden;
           cursor: pointer;
           transition: all 0.15s ease;
@@ -119,7 +119,7 @@ export default function TaskCard({ task, onClick, onComplete, onDelete, onDragEn
           min-width: 0;
         }
         .task-title {
-          font-size: 13px;
+          font-size: var(--text-sm);
           font-weight: 500;
           white-space: nowrap;
           overflow: hidden;
@@ -129,14 +129,14 @@ export default function TaskCard({ task, onClick, onComplete, onDelete, onDragEn
           display: flex;
           gap: 8px;
           margin-top: 2px;
-          font-size: 11px;
+          font-size: var(--text-xs);
           color: var(--text-muted);
         }
         .task-tag {
           background: var(--bg-elevated);
           padding: 0 6px;
-          border-radius: 3px;
-          font-size: 10px;
+          border-radius: var(--radius-sm);
+          font-size: var(--text-xs);
         }
         .task-actions {
           display: flex;

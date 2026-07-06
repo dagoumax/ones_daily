@@ -113,21 +113,21 @@ export default function WeekView({ date, onDateChange, onDayClick }) {
         .week-view { height: 100%; display: flex; flex-direction: column; }
         .wv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
         .wv-title { display: flex; align-items: center; gap: 12px; }
-        .wv-title h1 { font-size: 16px; font-weight: 600; }
+        .wv-title h1 { font-size: var(--text-lg); font-weight: 600; }
         .wv-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex: 1; }
-        .wv-col { background: var(--bg-surface); border-radius: 6px; display: flex; flex-direction: column; overflow: hidden; }
+        .wv-col { background: var(--bg-surface); border-radius: var(--radius-md); display: flex; flex-direction: column; overflow: hidden; }
         .wv-today { border: 1px solid var(--accent); }
         .wv-col-header { text-align: center; padding: 10px 4px 6px; border-bottom: 1px solid var(--border-default); }
-        .wv-day-label { display: block; font-size: 11px; color: var(--text-muted); }
-        .wv-day-date { display: block; font-size: 15px; font-weight: 600; margin-top: 2px; }
+        .wv-day-label { display: block; font-size: var(--text-xs); color: var(--text-muted); }
+        .wv-day-date { display: block; font-size: var(--text-base); font-weight: 600; margin-top: 2px; }
         .wv-col-body { flex: 1; padding: 6px; overflow-y: auto; }
-        .wv-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 20px 0; }
-        .wv-task { display: flex; align-items: stretch; margin-bottom: 4px; background: var(--bg-elevated); border-radius: 4px; overflow: hidden; cursor: pointer; }
+        .wv-empty { text-align: center; color: var(--text-muted); font-size: var(--text-sm); padding: 20px 0; }
+        .wv-task { display: flex; align-items: stretch; margin-bottom: 4px; background: var(--bg-elevated); border-radius: var(--radius-sm); overflow: hidden; cursor: pointer; }
         .wv-task:hover { background: #333; }
         .wv-task-bar { width: 3px; flex-shrink: 0; }
         .wv-task-info { padding: 5px 8px; min-width: 0; }
         .wv-task-title { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .wv-task-time { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+        .wv-task-time { font-size: var(--text-xs); color: var(--text-muted); margin-top: 1px; }
       `}</style>
     </div>
   );

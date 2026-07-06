@@ -115,19 +115,19 @@ export default function MonthView({ date, onDateChange, onDayClick }) {
         .month-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
         .mv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-shrink: 0; }
         .mv-title { display: flex; align-items: center; gap: 12px; }
-        .mv-title h1 { font-size: 18px; font-weight: 600; min-width: 120px; text-align: center; }
+        .mv-title h1 { font-size: var(--text-lg); font-weight: 600; min-width: 120px; text-align: center; }
         .mv-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: auto repeat(6, 1fr); gap: 2px; flex: 1; min-height: 0; }
         .mv-weekday { text-align: center; font-size: 12px; color: var(--text-muted); padding: 8px 0; font-weight: 500; }
-        .mv-day { background: var(--bg-surface); border-radius: 4px; padding: 6px; cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+        .mv-day { background: var(--bg-surface); border-radius: var(--radius-sm); padding: 6px; cursor: pointer; transition: background 0.15s; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
         .mv-day:hover { background: var(--bg-elevated); }
         .mv-day-empty { background: transparent; cursor: default; }
         .mv-day-empty:hover { background: transparent; }
         .mv-today { border: 1px solid var(--accent); }
         .mv-today .mv-day-num { color: var(--accent); font-weight: 700; }
-        .mv-day-num { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }
+        .mv-day-num { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 4px; }
         .mv-dots { display: flex; flex-wrap: wrap; gap: 3px; }
         .mv-dot { width: 6px; height: 6px; border-radius: 50%; }
-        .mv-more { font-size: 10px; color: var(--text-muted); }
+        .mv-more { font-size: var(--text-xs); color: var(--text-muted); }
       `}</style>
     </div>
   );
