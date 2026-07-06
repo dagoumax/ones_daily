@@ -8,35 +8,37 @@ const MODEL_TYPES = [
 
 const INITIAL_FORM = { name: '', type: 'openai', endpoint: '', apiKeyEncrypted: '', modelIdentifier: '' };
 
-// 预设主流模型 — 用户只需选模型 + 填 Key（数据截至 2025H2）
+// 预设主流模型 — 用户只需选模型 + 填 Key（数据截至 2026.07 来自官网）
 const PRESET_MODELS = [
   // OpenAI 系列
-  { id: 'gpt-4.1',      name: 'GPT-4.1',       icon: '🧠', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-4.1',            color: '#10a37f' },
-  { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini',   icon: '⚡', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-4.1-mini',       color: '#10a37f' },
-  { id: 'o4-mini',      name: 'o4-mini',         icon: '💡', type: 'openai', endpoint: 'https://api.openai.com',           model: 'o4-mini',            color: '#10a37f' },
+  { id: 'gpt-5.5',       name: 'GPT-5.5',        icon: '🧠', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-5.5',             color: '#10a37f' },
+  { id: 'gpt-5.4',       name: 'GPT-5.4',        icon: '⚡', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-5.4',             color: '#10a37f' },
+  { id: 'gpt-5.4-mini',  name: 'GPT-5.4 Mini',   icon: '💨', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-5.4-mini',        color: '#10a37f' },
 
-  // Anthropic
-  { id: 'claude-4',     name: 'Claude 4',        icon: '🎭', type: 'openai', endpoint: 'https://api.anthropic.com',        model: 'claude-4-sonnet-20250514', color: '#d97706' },
+  // Anthropic Claude
+  { id: 'claude-opus-4.8', name: 'Claude Opus 4.8', icon: '🎭', type: 'openai', endpoint: 'https://api.anthropic.com',    model: 'claude-opus-4-8',     color: '#d97706' },
+  { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', icon: '🎨', type: 'openai', endpoint: 'https://api.anthropic.com',    model: 'claude-sonnet-5',     color: '#d97706' },
 
-  // Google
-  { id: 'gemini-2.5',   name: 'Gemini 2.5 Pro',  icon: '🌐', type: 'openai', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-2.5-pro-exp-03-25', color: '#4285f4' },
+  // Google Gemini
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', icon: '🌐', type: 'openai', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-3.5-flash', color: '#4285f4' },
 
   // DeepSeek
-  { id: 'deepseek-v3',  name: 'DeepSeek V3.1',   icon: '🐋', type: 'openai', endpoint: 'https://api.deepseek.com',         model: 'deepseek-chat',      color: '#4f46e5' },
-  { id: 'deepseek-r1',  name: 'DeepSeek R1',     icon: '🔬', type: 'openai', endpoint: 'https://api.deepseek.com',         model: 'deepseek-reasoner',  color: '#4f46e5' },
+  { id: 'deepseek-v4-pro',  name: 'DeepSeek V4 Pro',  icon: '🐋', type: 'openai', endpoint: 'https://api.deepseek.com',     model: 'deepseek-v4-pro',    color: '#4f46e5' },
+  { id: 'deepseek-v4-flash',name: 'DeepSeek V4 Flash',icon: '⚡', type: 'openai', endpoint: 'https://api.deepseek.com',     model: 'deepseek-v4-flash',  color: '#4f46e5' },
 
   // 阿里通义千问 Qwen3
   { id: 'qwen3-plus',   name: '通义千问 Qwen3',   icon: '☁️', type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-plus',  color: '#6366f1' },
 
-  // 智谱 GLM-4.5
-  { id: 'glm-4.5',      name: '智谱 GLM-4.5',    icon: '🔮', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.5',         color: '#059669' },
+  // 智谱 GLM-4.7
+  { id: 'glm-4.7',      name: '智谱 GLM-4.7',    icon: '🔮', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7',         color: '#059669' },
+  { id: 'glm-4.7-flash',name: 'GLM-4.7 FlashX',  icon: '💨', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7-flashx',  color: '#059669' },
 
-  // Kimi K2.5 (月之暗面)
-  { id: 'kimi-k2.5',    name: 'Kimi K2.5',       icon: '🌙', type: 'openai', endpoint: 'https://api.moonshot.cn/v1',       model: 'kimi-k2.5',          color: '#1e1e1e' },
+  // Kimi K2.6 (月之暗面)
+  { id: 'kimi-k2.6',    name: 'Kimi K2.6',       icon: '🌙', type: 'openai', endpoint: 'https://api.moonshot.cn/v1',       model: 'kimi-k2.6',          color: '#1e1e1e' },
 
   // 小米 MiMo
-  { id: 'mimo-v2.5',    name: 'MiMo V2.5',       icon: '📱', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5',          color: '#ff6900' },
-  { id: 'mimo-pro',     name: 'MiMo V2.5 Pro',   icon: '🔥', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5-pro',      color: '#ff6900' },
+  { id: 'mimo-v2.5-pro', name: 'MiMo V2.5 Pro',   icon: '🔥', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5-pro',      color: '#ff6900' },
+  { id: 'mimo-v2.5',     name: 'MiMo V2.5',       icon: '📱', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5',          color: '#ff6900' },
 
   // 本地 Ollama
   { id: 'ollama',       name: 'Ollama 本地',      icon: '🦙', type: 'ollama', endpoint: 'http://localhost:11434',           model: 'llama3.1',           color: '#f59e0b' },
