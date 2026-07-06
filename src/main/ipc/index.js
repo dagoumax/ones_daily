@@ -155,8 +155,16 @@ function registerVoiceHandlers() {
   })();
 
   // Auto-detect whisper paths
+  // Directory layout:
+  //   resources/
+  //   ├── whisper/            ← whisper.cpp executable + DLLs
+  //   │   ├── whisper-cli.exe
+  //   │   └── ggml-*.dll
+  //   ├── models/             ← whisper model files
+  //   │   └── ggml-small.bin
+  //   └── tray-icon.png
   const appRoot = path.join(__dirname, '..', '..', '..');
-  const exePath = path.join(appRoot, 'resources', 'whisper-cli.exe');
+  const exePath = path.join(appRoot, 'resources', 'whisper', 'whisper-cli.exe');
   const modelPath = path.join(appRoot, 'resources', 'models', 'ggml-small.bin');
   let whisperReady = false;
 
