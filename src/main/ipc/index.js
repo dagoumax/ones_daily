@@ -261,15 +261,39 @@ async function testModelConnection(model) {
   const isHttps = parsedUrl.protocol === 'https:';
   const transport = isHttps ? https : http;
 
+  const isAnthropic = parsedUrl.hostname.includes('anthropic');
+  const basePath = (parsedUrl.path || '/').replace(/\/$/, '');
+  const path = isAnthropic
+    ? '/v1/messages'
+    : /\/v1$/.test(basePath) || /\/v1beta$/.test(basePath)
+      ? basePath + '/chat/completions'
+      : basePath + '/v1/chat/completions';
+
+  const postData = JSON.stringify(isAnthropic ? {
+    model: model.model_identifier || 'claude-sonnet-5',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 1,
+  } : {
+    model: model.model_identifier || 'default',
+    messages: [{ role: 'user', content: 'hi' }],
+    max_tokens: 1,
+  });
+
   const options = {
     hostname: parsedUrl.hostname,
     port: parsedUrl.port || (isHttps ? 443 : 80),
-    path: parsedUrl.path || '/v1/models',
-    method: 'GET',
+    path,
+    method: 'POST',
     timeout: 10000,
-    headers: {
+    headers: isAnthropic ? {
+      'x-api-key': model.api_key_encrypted || '',
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData),
+    } : {
       'Authorization': `Bearer ${model.api_key_encrypted || ''}`,
       'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData),
     },
   };
 
@@ -279,25 +303,19 @@ async function testModelConnection(model) {
       res.on('data', (chunk) => body += chunk);
       res.on('end', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          let modelName = model.model_identifier || '-';
-          try {
-            const data = JSON.parse(body);
-            if (data.data && data.data.length > 0) {
-              modelName = data.data.map(m => m.id).join(', ');
-            } else if (data.model) {
-              modelName = data.model;
-            }
-          } catch (_) {}
-          resolve({ models: modelName, statusCode: res.statusCode });
+          resolve({ success: true, statusCode: res.statusCode, message: '连接成功' });
         } else if (res.statusCode === 401 || res.statusCode === 403) {
           reject(new Error(`认证失败 (HTTP ${res.statusCode})`));
         } else {
-          reject(new Error(`请求失败 (HTTP ${res.statusCode})`));
+          let detail = '';
+          try { detail = JSON.parse(body).error?.message || body.slice(0, 200); } catch (_) { detail = body.slice(0, 200); }
+          reject(new Error(`请求失败 (HTTP ${res.statusCode})${detail ? ': ' + detail : ''}`));
         }
       });
     });
     req.on('timeout', () => { req.destroy(); reject(new Error('连接超时')); });
     req.on('error', (e) => reject(new Error(`连接失败: ${e.message}`)));
+    req.write(postData);
     req.end();
   });
 }
