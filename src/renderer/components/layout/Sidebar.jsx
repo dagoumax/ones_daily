@@ -13,6 +13,19 @@ export default function Sidebar({ currentView, onViewChange }) {
       <div className="sidebar-brand">
         <span className="sidebar-logo">⚡</span>
       </div>
+
+      {/* 快速创建 — 独立于导航区域 */}
+      <div className="sidebar-create">
+        <button
+          className={`sidebar-item sidebar-create-btn ${currentView === 'create' ? 'active' : ''}`}
+          onClick={() => onViewChange('create')}
+          title="快速创建 (Ctrl+N)"
+        >
+          <span className="sidebar-icon">➕</span>
+          <span className="sidebar-label">快速创建</span>
+        </button>
+      </div>
+
       <nav className="sidebar-nav">
         {NAV_ITEMS.map(item => (
           <button
@@ -26,6 +39,7 @@ export default function Sidebar({ currentView, onViewChange }) {
           </button>
         ))}
       </nav>
+
       <div className="sidebar-footer">
         <button className="sidebar-item" title="知识库">
           <span className="sidebar-icon">🧠</span>
@@ -54,10 +68,29 @@ export default function Sidebar({ currentView, onViewChange }) {
           width: 160px;
         }
         .sidebar-brand {
-          margin-bottom: 24px;
+          margin-bottom: 8px;
         }
         .sidebar-logo {
           font-size: 22px;
+        }
+        .sidebar-create {
+          width: 100%;
+          padding: 0 8px;
+          margin-bottom: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid var(--border-default);
+        }
+        .sidebar-create-btn {
+          background: var(--accent) !important;
+          color: #000 !important;
+          font-weight: 600;
+          border-radius: 10px !important;
+        }
+        .sidebar-create-btn:hover {
+          filter: brightness(1.1);
+        }
+        .sidebar-create-btn.active {
+          filter: brightness(0.9);
         }
         .sidebar-nav {
           flex: 1;

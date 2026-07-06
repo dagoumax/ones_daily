@@ -35,8 +35,9 @@ function createWindow() {
     mainWindow = null;
   });
 
-  globalShortcut.register('Ctrl+Shift+V', () => {
-    mainWindow?.webContents.send('shortcut:voice-record');
+  // Ctrl+N: 快速创建事项
+  globalShortcut.register('Ctrl+N', () => {
+    mainWindow?.webContents.send('shortcut:quick-create');
   });
 }
 

@@ -1,27 +1,28 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/layout/Sidebar';
 import DayView from './views/DayView';
 import WeekView from './views/WeekView';
 import MonthView from './views/MonthView';
 import YearView from './views/YearView';
+import CreateView from './views/CreateView';
 import SearchBar from './components/calendar/SearchBar';
-import VoiceButton from './components/voice/VoiceButton';
 
 const VIEWS = {
   day: DayView,
   week: WeekView,
   month: MonthView,
   year: YearView,
+  create: CreateView,
 };
 
 export default function App() {
   const [currentView, setCurrentView] = useState('day');
   const [currentDate, setCurrentDate] = useState(new Date());
-
   const [refreshKey, setRefreshKey] = useState(0);
   const refresh = () => setRefreshKey(k => k + 1);
 
   const ViewComponent = VIEWS[currentView] || DayView;
+  const isCreateView = currentView === 'create';
 
   const handleTaskCreated = () => {
     setCurrentView('day');
@@ -29,7 +30,6 @@ export default function App() {
     refresh();
   };
 
-  // 视图联动回调
   const handleDayClick = (newDate) => {
     setCurrentDate(newDate);
     setCurrentView('day');
@@ -48,6 +48,13 @@ export default function App() {
     setCurrentView('day');
   };
 
+  // 监听快捷键：切换到创建页面
+  useEffect(() => {
+    const handler = () => setCurrentView('create');
+    window.electronAPI?.on('shortcut:quick-create', handler);
+    return () => window.electronAPI?.removeListener('shortcut:quick-create', handler);
+  }, []);
+
   return (
     <div className="app-container">
       <Sidebar
@@ -55,15 +62,21 @@ export default function App() {
         onViewChange={setCurrentView}
       />
       <main className="main-content">
-        <SearchBar onSelect={handleSearchSelect} />
-        <ViewComponent
-          date={currentDate}
-          onDateChange={setCurrentDate}
-          onDayClick={handleDayClick}
-          onMonthClick={handleMonthClick}
-        />
+        {/* 创建页不显示搜索栏 */}
+        {!isCreateView && (
+          <SearchBar onSelect={handleSearchSelect} />
+        )}
+        <div key={isCreateView ? 'create' : refreshKey} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <ViewComponent
+            date={currentDate}
+            onDateChange={setCurrentDate}
+            onDayClick={handleDayClick}
+            onMonthClick={handleMonthClick}
+            onCreated={handleTaskCreated}
+            onCancel={() => setCurrentView('day')}
+          />
+        </div>
       </main>
-      <VoiceButton onTaskCreated={handleTaskCreated} />
     </div>
   );
 }
