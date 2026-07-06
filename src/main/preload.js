@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ==========================================
   on: (channel, callback) => {
     const validChannels = [
+      'shortcut:quick-create',
       'shortcut:voice-record',
       'notification:reminder',
       'model:status-changed',
