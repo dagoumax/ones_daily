@@ -3,6 +3,7 @@ const { getDatabase, saveToDisk } = require('../database');
 const { app } = require('electron');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const { callLLM, buildTaskCreationPrompt, parseLLMResponse, getDefaultModel } = require('../services/llmService');
 
 function dbAll(sql, params = []) {
   const db = getDatabase();
@@ -31,12 +32,13 @@ function persist() {
 }
 
 // ============================================
-function registerIpcHandlers() {
+function registerIpcHandlers(mainWindow) {
   registerTaskHandlers();
   registerKnowledgeHandlers();
   registerModelHandlers();
   registerVoiceHandlers();
   registerSystemHandlers();
+  registerAiHandlers(mainWindow);
 }
 
 function registerTaskHandlers() {
@@ -247,7 +249,329 @@ function registerSystemHandlers() {
   ipcMain.handle('system:getAppVersion', () => ({ version: '1.0.0' }));
 }
 
+// ============================================
+// AI 智能对话引擎（Phase 0 骨架）
+// ============================================
+function registerAiHandlers(mainWindow) {
+  // ai:chat — 真实 LLM 调用
+  ipcMain.handle('ai:chat', async (_, { message, sessionId, history, existingSlots }) => {
+    const session = sessionId || uuidv4();
+    const startTime = Date.now();
+    
+    try {
+      // 1. 获取默认模型
+      const model = getDefaultModel();
+      if (!model) {
+        return { 
+          success: false, 
+          error: '未配置 AI 模型', 
+          fallback: true,
+          sessionId: session 
+        };
+      }
+      
+      // 2. 构建 Prompt
+      const { messages } = buildTaskCreationPrompt(message, existingSlots);
+      
+      // 3. 注入对话历史（如果有）
+      if (history && history.length > 0) {
+        const historyMsgs = history.map(h => ({ role: h.role, content: h.content }));
+        messages.splice(1, 0, ...historyMsgs);
+      }
+      
+      // 4. 保存用户消息
+      dbRun(
+        'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
+        [uuidv4(), session, 'user', message, 'chat', JSON.stringify({ existingSlots: existingSlots || {} })]
+      );
+      
+      // 5. 调用 LLM
+      const result = await callLLM(model, messages, { temperature: 0.1, maxTokens: 1024 });
+      const durationMs = Date.now() - startTime;
+      
+      // 6. 解析响应
+      const parsed = parseLLMResponse(result.content);
+      
+      if (!parsed) {
+        // JSON 解析失败，重试一次
+        const retryResult = await callLLM(model, messages, { temperature: 0, maxTokens: 1024 });
+        const retryParsed = parseLLMResponse(retryResult.content);
+        
+        if (!retryParsed) {
+          // 两次都失败，记录并降级
+          dbRun(
+            'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
+            [uuidv4(), session, 'assistant', result.content, 'parse_error', JSON.stringify({ durationMs, error: 'JSON parse failed' })]
+          );
+          return {
+            success: false,
+            error: 'AI 响应解析失败',
+            fallback: true,
+            sessionId: session,
+            rawContent: result.content.slice(0, 200),
+          };
+        }
+        
+        // 重试成功
+        const retryDurationMs = Date.now() - startTime;
+        const replyContent = buildReplyContent(retryParsed);
+        const replyId = uuidv4();
+        dbRun(
+          'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
+          [replyId, session, 'assistant', replyContent, retryParsed.intent, JSON.stringify({
+            slots: retryParsed.slots, durationMs: retryDurationMs,
+            promptTokens: retryResult.promptTokens, completionTokens: retryResult.completionTokens
+          })]
+        );
+        
+        recordUsage(model.id, 'chat', retryResult.promptTokens, retryResult.completionTokens, retryDurationMs);
+        
+        return buildChatResponse(retryParsed, replyContent, session);
+      }
+      
+      // 7. 构建回复
+      const replyContent = buildReplyContent(parsed);
+      const replyId = uuidv4();
+      dbRun(
+        'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
+        [replyId, session, 'assistant', replyContent, parsed.intent, JSON.stringify({
+          slots: parsed.slots, durationMs,
+          promptTokens: result.promptTokens, completionTokens: result.completionTokens
+        })]
+      );
+      
+      // 8. 记录 usage_logs
+      recordUsage(model.id, 'chat', result.promptTokens, result.completionTokens, durationMs);
+      
+      return buildChatResponse(parsed, replyContent, session);
+      
+    } catch (e) {
+      const durationMs = Date.now() - startTime;
+      console.error('[ai:chat] Error:', e.message);
+      
+      // 记录错误
+      try {
+        dbRun(
+          'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
+          [uuidv4(), session, 'assistant', e.message, 'error', JSON.stringify({ durationMs, error: e.message })]
+        );
+      } catch (_) {}
+      
+      return {
+        success: false,
+        error: e.message,
+        fallback: true,
+        sessionId: session,
+      };
+    }
+  });
+
+  // ai:chatStream — 流式输出（骨架：直接发送占位内容）
+  ipcMain.handle('ai:chatStream', async (_, { message, sessionId }) => {
+    const session = sessionId || uuidv4();
+    dbRun(
+      'INSERT INTO conversations (id, session_id, role, content, intent) VALUES (?,?,?,?,?)',
+      [uuidv4(), session, 'user', message, 'chat']
+    );
+    // 模拟流式输出
+    const placeholder = 'AI 流式回复占位内容...';
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      for (let i = 0; i < placeholder.length; i++) {
+        mainWindow.webContents.send('ai:chatStream', placeholder[i]);
+        await new Promise(r => setTimeout(r, 30));
+      }
+    }
+    const replyId = uuidv4();
+    dbRun(
+      'INSERT INTO conversations (id, session_id, role, content, intent) VALUES (?,?,?,?,?)',
+      [replyId, session, 'assistant', placeholder, 'chat']
+    );
+    return { sessionId: session };
+  });
+
+  // ai:getConversation — 获取历史对话
+  ipcMain.handle('ai:getConversation', (_, sessionId) => {
+    const rows = dbAll(
+      'SELECT * FROM conversations WHERE session_id = ? ORDER BY created_at ASC',
+      [sessionId]
+    );
+    return { sessionId, messages: rows };
+  });
+
+  // ai:clearConversation — 清除对话
+  ipcMain.handle('ai:clearConversation', (_, sessionId) => {
+    dbRun('DELETE FROM conversations WHERE session_id = ?', [sessionId]);
+    return { success: true };
+  });
+
+  // ai:brief — 每日播报（骨架：查询今日任务 + 统计）
+  ipcMain.handle('ai:brief', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayTasks = dbAll(
+      "SELECT * FROM tasks WHERE date(start_time) = date(?) ORDER BY start_time ASC",
+      [today]
+    );
+    const completedToday = todayTasks.filter(t => t.status === 'completed').length;
+    const pendingToday = todayTasks.filter(t => t.status !== 'completed').length;
+
+    // 上周统计（骨架）
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const weekTasks = dbAll(
+      'SELECT status, COUNT(*) as count FROM tasks WHERE date(start_time) >= date(?) AND date(start_time) < date(?) GROUP BY status',
+      [weekAgo, today]
+    );
+    const weekCompleted = weekTasks.find(r => r.status === 'completed')?.count || 0;
+    const weekTotal = weekTasks.reduce((sum, r) => sum + r.count, 0);
+
+    return {
+      date: today,
+      todayTasks,
+      todayStats: { total: todayTasks.length, completed: completedToday, pending: pendingToday },
+      lastWeekStats: { total: weekTotal, completed: weekCompleted },
+      message: '今日播报骨架数据',
+    };
+  });
+
+  // ai:review — 每日复盘（骨架：查询完成/未完成任务）
+  ipcMain.handle('ai:review', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayTasks = dbAll(
+      "SELECT * FROM tasks WHERE date(start_time) = date(?) ORDER BY start_time ASC",
+      [today]
+    );
+    const completedTasks = todayTasks.filter(t => t.status === 'completed');
+    const pendingTasks = todayTasks.filter(t => t.status !== 'completed');
+
+    // 明日任务（骨架：查询明天的任务）
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const tomorrowTasks = dbAll(
+      "SELECT * FROM tasks WHERE date(start_time) = date(?) ORDER BY start_time ASC",
+      [tomorrow]
+    );
+
+    return {
+      date: today,
+      completed: completedTasks,
+      pending: pendingTasks,
+      tomorrow: tomorrowTasks,
+      stats: {
+        completedCount: completedTasks.length,
+        pendingCount: pendingTasks.length,
+        completionRate: todayTasks.length > 0 
+          ? Math.round((completedTasks.length / todayTasks.length) * 100) 
+          : 0,
+      },
+      message: '每日复盘骨架数据',
+    };
+  });
+
+  // ai:getSuggestions — 槽位补全建议（骨架：返回空建议）
+  ipcMain.handle('ai:getSuggestions', (_, { partialTask, context }) => {
+    return {
+      suggestions: {
+        title: partialTask?.title ? [] : ['建议填写标题'],
+        priority: partialTask?.priority || 'P2',
+        startTime: partialTask?.startTime || null,
+        endTime: partialTask?.endTime || null,
+        tags: partialTask?.tags || [],
+      },
+      message: '槽位补全骨架数据',
+    };
+  });
+
+  // ai:getUserProfile — 获取用户画像
+  ipcMain.handle('ai:getUserProfile', () => {
+    let profile = dbGet("SELECT * FROM user_profile WHERE id = 'default'");
+    if (!profile) {
+      // 首次访问时创建默认画像
+      dbRun(
+        "INSERT OR IGNORE INTO user_profile (id, work_hours_start, work_hours_end, default_priority, common_tags, preferences) VALUES ('default','09:00','18:00','P2','[]','{}')"
+      );
+      profile = dbGet("SELECT * FROM user_profile WHERE id = 'default'");
+    }
+    // 解析 JSON 字段
+    return {
+      ...profile,
+      common_tags: safeJsonParse(profile.common_tags, []),
+      preferences: safeJsonParse(profile.preferences, {}),
+    };
+  });
+
+  // ai:updateUserProfile — 更新用户画像
+  ipcMain.handle('ai:updateUserProfile', (_, updates) => {
+    const existing = dbGet("SELECT * FROM user_profile WHERE id = 'default'");
+    if (!existing) {
+      dbRun(
+        "INSERT INTO user_profile (id, work_hours_start, work_hours_end, default_priority, common_tags, preferences) VALUES ('default','09:00','18:00','P2','[]','{}')"
+      );
+    }
+    const fields = [];
+    const args = [];
+    for (const [k, v] of Object.entries(updates)) {
+      const col = camelToSnake(k);
+      fields.push(`${col} = ?`);
+      args.push(typeof v === 'object' ? JSON.stringify(v) : v);
+    }
+    fields.push("updated_at = datetime('now','localtime')");
+    args.push('default');
+    dbRun(`UPDATE user_profile SET ${fields.join(', ')} WHERE id = ?`, args);
+    const profile = dbGet("SELECT * FROM user_profile WHERE id = 'default'");
+    return {
+      ...profile,
+      common_tags: safeJsonParse(profile.common_tags, []),
+      preferences: safeJsonParse(profile.preferences, {}),
+    };
+  });
+}
+
 function camelToSnake(str) { return str.replace(/[A-Z]/g, l => `_${l.toLowerCase()}`); }
+
+function safeJsonParse(str, fallback) {
+  try { return JSON.parse(str); } catch { return fallback; }
+}
+
+// 辅助：构建 AI 回复文本
+function buildReplyContent(parsed) {
+  if (parsed.intent === 'unknown' || parsed.confidence < 0.7) {
+    return "抱歉，我不太理解。你可以试试说'明天下午开会'或'帮我记一下买牛奶'";
+  }
+  if (parsed.intent !== 'create_task') {
+    return '此功能将在后续版本支持。现在可以试试创建任务，比如"明天下午3点开会"';
+  }
+  if (parsed.missing_fields && parsed.missing_fields.length > 0) {
+    return parsed.follow_up_question || `请补充以下信息：${parsed.missing_fields.join('、')}`;
+  }
+  // 槽位完整，确认卡片由前端渲染
+  return null; // null 表示需要展示确认卡片
+}
+
+// 辅助：构建 IPC 响应
+function buildChatResponse(parsed, replyContent, session) {
+  return {
+    success: true,
+    intent: parsed.intent,
+    confidence: parsed.confidence,
+    slots: parsed.slots || null,
+    missingFields: parsed.missing_fields || [],
+    followUpQuestion: parsed.follow_up_question || null,
+    reply: replyContent,
+    confirmCard: parsed.intent === 'create_task' && (!parsed.missing_fields || parsed.missing_fields.length === 0),
+    sessionId: session,
+  };
+}
+
+// 辅助：记录使用日志
+function recordUsage(modelId, scene, promptTokens, completionTokens, durationMs) {
+  try {
+    const costEstimated = (promptTokens * 0.000001 + completionTokens * 0.000002);
+    dbRun(
+      'INSERT INTO usage_logs (id, model_id, scene, prompt_tokens, completion_tokens, cost_estimated, duration_ms, status) VALUES (?,?,?,?,?,?,?,?)',
+      [uuidv4(), modelId, scene, promptTokens, completionTokens, costEstimated, durationMs, 'success']
+    );
+  } catch (e) {
+    console.error('[ai:chat] Failed to record usage:', e.message);
+  }
+}
 
 // ============================================
 // 模型连接测试

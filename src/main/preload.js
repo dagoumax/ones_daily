@@ -71,6 +71,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // ==========================================
+  // AI 智能对话引擎
+  // ==========================================
+  ai: {
+    chat: (params) => ipcRenderer.invoke('ai:chat', params),
+    chatStream: (params) => ipcRenderer.invoke('ai:chatStream', params),
+    getConversation: (sessionId) => ipcRenderer.invoke('ai:getConversation', sessionId),
+    clearConversation: (sessionId) => ipcRenderer.invoke('ai:clearConversation', sessionId),
+    brief: () => ipcRenderer.invoke('ai:brief'),
+    review: () => ipcRenderer.invoke('ai:review'),
+    getSuggestions: (params) => ipcRenderer.invoke('ai:getSuggestions', params),
+    getUserProfile: () => ipcRenderer.invoke('ai:getUserProfile'),
+    updateUserProfile: (updates) => ipcRenderer.invoke('ai:updateUserProfile', updates),
+  },
+
+  // ==========================================
   // 事件监听（主进程 → 渲染进程）
   // ==========================================
   on: (channel, callback) => {
@@ -80,6 +95,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'notification:reminder',
       'model:status-changed',
       'data:sync-update',
+      'ai:chatStream',
     ];
     if (validChannels.includes(channel)) {
       ipcRenderer.on(channel, (event, ...args) => callback(...args));

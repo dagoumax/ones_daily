@@ -60,16 +60,11 @@ function createTray() {
 
 app.whenReady().then(async () => {
   try {
-    // 初始化数据库
     await initDatabase();
-
-    // 注册 IPC handlers
-    registerIpcHandlers();
-
-    // 创建窗口
-    createWindow();
+    createWindow();  // 先创建窗口
     createTray();
-
+    registerIpcHandlers(mainWindow);  // 再注册 IPC（此时 mainWindow 不为 null）
+    
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
@@ -77,7 +72,6 @@ app.whenReady().then(async () => {
     });
   } catch (err) {
     console.error('[App] Failed to start:', err);
-    // 即使初始化失败也尝试创建窗口（但不重复注册 IPC）
     createWindow();
   }
 });

@@ -1,5 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { parseInput } from '../utils/parseInput';
+import AICreatePanel from '../components/ai/AICreatePanel';
+import useAiStore from '../stores/aiStore';
 
 const PRIORITY_CONFIG = {
   P0: { label: 'P0 紧急', color: '#e94560', bg: 'rgba(233,69,96,0.15)' },
@@ -16,16 +18,32 @@ export default function CreateView({ date, onCreated, onCancel }) {
   const [voiceText, setVoiceText] = useState('');
   const [voiceStatus, setVoiceStatus] = useState('idle'); // idle | recording | processing | error
   const [voiceDuration, setVoiceDuration] = useState(0);
+  const [chatMode, setChatMode] = useState(false);
+  const [hasModels, setHasModels] = useState(true);
   const inputRef = useRef(null);
   const mrRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const streamRef = useRef(null);
 
-  // 自动聚焦
+  const { resetChat } = useAiStore();
+
+  // 检查是否有可用模型
   useEffect(() => {
-    inputRef.current?.focus();
+    (async () => {
+      try {
+        const models = await window.electronAPI?.models.getAll();
+        setHasModels(models && models.length > 0);
+      } catch { setHasModels(false); }
+    })();
   }, []);
+
+  // 自动聚焦（仅在手动模式）
+  useEffect(() => {
+    if (!chatMode) {
+      inputRef.current?.focus();
+    }
+  }, [chatMode]);
 
   // 实时解析
   const handleInputChange = useCallback((e) => {
@@ -184,11 +202,39 @@ export default function CreateView({ date, onCreated, onCancel }) {
 
   return (
     <div className="create-view">
+      {chatMode ? (
+        <div className="create-container" style={{ width: '580px', paddingTop: 0 }}>
+          <div className="create-header" style={{ marginBottom: 0 }}>
+            <div className="mode-switch-bar">
+              <button className="mode-switch-btn" onClick={() => { setChatMode(false); resetChat(); }}>
+                ✎ 手动模式
+              </button>
+              <button className="mode-switch-btn active">
+                🤖 AI 模式
+              </button>
+            </div>
+          </div>
+          <AICreatePanel onCreated={onCreated} onCancel={() => { setChatMode(false); resetChat(); onCancel?.(); }} />
+        </div>
+      ) : (
       <div className="create-container">
-        {/* 标题 */}
+        {/* 标题 + 模式切换 */}
         <div className="create-header">
           <h1>快速创建</h1>
           <span className="create-subtitle">打字或语音，一句话创建事项</span>
+          <div className="mode-switch-bar">
+            <button className="mode-switch-btn active">
+              ✎ 手动模式
+            </button>
+            <button
+              className={`mode-switch-btn ${!hasModels ? 'disabled' : ''}`}
+              onClick={() => hasModels && setChatMode(true)}
+              title={!hasModels ? '请先在模型管理中配置 AI 模型' : '切换到 AI 智能创建模式'}
+              disabled={!hasModels}
+            >
+              🤖 AI 模式
+            </button>
+          </div>
         </div>
 
         {/* 输入区 */}
@@ -297,6 +343,7 @@ export default function CreateView({ date, onCreated, onCancel }) {
           <code>#标签名</code> 添加标签
         </div>
       </div>
+      )}
 
       <style>{`
         .create-view {
@@ -472,6 +519,42 @@ export default function CreateView({ date, onCreated, onCancel }) {
           border-radius: var(--radius-sm);
           font-size: var(--text-xs);
           color: var(--accent);
+        }
+
+        /* 模式切换按钮 */
+        .mode-switch-bar {
+          display: flex;
+          gap: 0;
+          margin-top: 10px;
+          background: var(--bg-surface);
+          border-radius: var(--radius-md);
+          padding: 3px;
+          border: 1px solid var(--border-default);
+        }
+        .mode-switch-btn {
+          flex: 1;
+          padding: 6px 12px;
+          border: none;
+          background: transparent;
+          color: var(--text-secondary);
+          font-size: var(--text-sm);
+          font-family: inherit;
+          cursor: pointer;
+          border-radius: var(--radius-sm);
+          transition: all 0.15s;
+        }
+        .mode-switch-btn:hover:not(.disabled):not(.active) {
+          color: var(--text-primary);
+          background: var(--bg-elevated);
+        }
+        .mode-switch-btn.active {
+          background: var(--accent);
+          color: #000;
+          font-weight: 500;
+        }
+        .mode-switch-btn.disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
         }
         @keyframes voice-pulse {
           0%, 100% { box-shadow: 0 0 0 0 rgba(233,69,96,0.3); }

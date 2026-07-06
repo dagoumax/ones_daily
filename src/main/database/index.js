@@ -78,6 +78,36 @@ function createTables() {
       id TEXT PRIMARY KEY, node_id TEXT NOT NULL, vector TEXT NOT NULL,
       model_name TEXT DEFAULT 'unknown', created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))`,
     'CREATE INDEX IF NOT EXISTS idx_ve_node ON vector_embeddings(node_id)',
+    // AI 对话记录表
+    `CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      intent TEXT,
+      metadata TEXT DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))`,
+    'CREATE INDEX IF NOT EXISTS idx_conv_session ON conversations(session_id)',
+    'CREATE INDEX IF NOT EXISTS idx_conv_created ON conversations(created_at)',
+    // AI 决策记录表（用于学习用户偏好）
+    `CREATE TABLE IF NOT EXISTS ai_decisions (
+      id TEXT PRIMARY KEY,
+      scene TEXT NOT NULL,
+      input_context TEXT,
+      ai_suggestion TEXT,
+      user_choice TEXT,
+      accepted INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))`,
+    'CREATE INDEX IF NOT EXISTS idx_aid_scene ON ai_decisions(scene)',
+    // 用户画像表
+    `CREATE TABLE IF NOT EXISTS user_profile (
+      id TEXT PRIMARY KEY DEFAULT 'default',
+      work_hours_start TEXT DEFAULT '09:00',
+      work_hours_end TEXT DEFAULT '18:00',
+      default_priority TEXT DEFAULT 'P2',
+      common_tags TEXT DEFAULT '[]',
+      preferences TEXT DEFAULT '{}',
+      updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))`,
   ];
   stmts.forEach(s => db.run(s));
   console.log('[Database] Tables created successfully');
