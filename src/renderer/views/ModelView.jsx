@@ -8,16 +8,38 @@ const MODEL_TYPES = [
 
 const INITIAL_FORM = { name: '', type: 'openai', endpoint: '', apiKeyEncrypted: '', modelIdentifier: '' };
 
-// 预设主流模型 — 用户只需选模型 + 填 Key
+// 预设主流模型 — 用户只需选模型 + 填 Key（数据截至 2025H2）
 const PRESET_MODELS = [
-  { id: 'gpt-4o', name: 'GPT-4o', icon: '🧠', type: 'openai', endpoint: 'https://api.openai.com', model: 'gpt-4o', color: '#10a37f' },
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', icon: '⚡', type: 'openai', endpoint: 'https://api.openai.com', model: 'gpt-4o-mini', color: '#10a37f' },
-  { id: 'claude-sonnet', name: 'Claude 3.5 Sonnet', icon: '🎭', type: 'openai', endpoint: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022', color: '#d97706' },
-  { id: 'deepseek', name: 'DeepSeek V3', icon: '🐋', type: 'openai', endpoint: 'https://api.deepseek.com', model: 'deepseek-chat', color: '#4f46e5' },
-  { id: 'qwen', name: '通义千问', icon: '☁️', type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', color: '#6366f1' },
-  { id: 'glm', name: '智谱 GLM-4', icon: '🔮', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4', color: '#059669' },
-  { id: 'moonshot', name: 'Moonshot', icon: '🌙', type: 'openai', endpoint: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', color: '#1e1e1e' },
-  { id: 'ollama', name: 'Ollama 本地', icon: '🦙', type: 'ollama', endpoint: 'http://localhost:11434', model: 'llama3', color: '#f59e0b' },
+  // OpenAI 系列
+  { id: 'gpt-4.1',      name: 'GPT-4.1',       icon: '🧠', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-4.1',            color: '#10a37f' },
+  { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini',   icon: '⚡', type: 'openai', endpoint: 'https://api.openai.com',           model: 'gpt-4.1-mini',       color: '#10a37f' },
+  { id: 'o4-mini',      name: 'o4-mini',         icon: '💡', type: 'openai', endpoint: 'https://api.openai.com',           model: 'o4-mini',            color: '#10a37f' },
+
+  // Anthropic
+  { id: 'claude-4',     name: 'Claude 4',        icon: '🎭', type: 'openai', endpoint: 'https://api.anthropic.com',        model: 'claude-4-sonnet-20250514', color: '#d97706' },
+
+  // Google
+  { id: 'gemini-2.5',   name: 'Gemini 2.5 Pro',  icon: '🌐', type: 'openai', endpoint: 'https://generativelanguage.googleapis.com', model: 'gemini-2.5-pro-exp-03-25', color: '#4285f4' },
+
+  // DeepSeek
+  { id: 'deepseek-v3',  name: 'DeepSeek V3.1',   icon: '🐋', type: 'openai', endpoint: 'https://api.deepseek.com',         model: 'deepseek-chat',      color: '#4f46e5' },
+  { id: 'deepseek-r1',  name: 'DeepSeek R1',     icon: '🔬', type: 'openai', endpoint: 'https://api.deepseek.com',         model: 'deepseek-reasoner',  color: '#4f46e5' },
+
+  // 阿里通义千问 Qwen3
+  { id: 'qwen3-plus',   name: '通义千问 Qwen3',   icon: '☁️', type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3-plus',  color: '#6366f1' },
+
+  // 智谱 GLM-4.5
+  { id: 'glm-4.5',      name: '智谱 GLM-4.5',    icon: '🔮', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.5',         color: '#059669' },
+
+  // Kimi K2.5 (月之暗面)
+  { id: 'kimi-k2.5',    name: 'Kimi K2.5',       icon: '🌙', type: 'openai', endpoint: 'https://api.moonshot.cn/v1',       model: 'kimi-k2.5',          color: '#1e1e1e' },
+
+  // 小米 MiMo
+  { id: 'mimo-v2.5',    name: 'MiMo V2.5',       icon: '📱', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5',          color: '#ff6900' },
+  { id: 'mimo-pro',     name: 'MiMo V2.5 Pro',   icon: '🔥', type: 'openai', endpoint: 'https://api.mimo.mi.com/v1',        model: 'mimo-v2.5-pro',      color: '#ff6900' },
+
+  // 本地 Ollama
+  { id: 'ollama',       name: 'Ollama 本地',      icon: '🦙', type: 'ollama', endpoint: 'http://localhost:11434',           model: 'llama3.1',           color: '#f59e0b' },
 ];
 
 export default function ModelView() {
