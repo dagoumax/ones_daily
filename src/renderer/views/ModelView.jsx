@@ -209,6 +209,7 @@ export default function ModelView() {
                 className={`mv-quick-card ${configured ? 'mv-quick-configured' : ''} ${quickModel?.id === p.id ? 'mv-quick-selected' : ''}`}
                 onClick={() => { setQuickModel(p); setQuickKey(''); }}
                 style={{ '--card-color': p.color }}
+                title={`${p.name} (${p.model})`}
               >
                 <span className="mv-quick-icon">
                   <BrandIcon brand={p.brand} size={18} color={p.color} />
@@ -358,7 +359,7 @@ export default function ModelView() {
         .mv-quick-section { margin-bottom: 20px; flex-shrink: 0; }
         .mv-quick-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
         .mv-quick-hint { font-size: 12px; font-weight: 400; color: var(--text-muted); }
-        .mv-quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+        .mv-quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
         .mv-quick-card {
           display: flex; align-items: center; gap: 8px;
           padding: 10px 12px;
