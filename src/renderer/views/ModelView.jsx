@@ -8,6 +8,18 @@ const MODEL_TYPES = [
 
 const INITIAL_FORM = { name: '', type: 'openai', endpoint: '', apiKeyEncrypted: '', modelIdentifier: '' };
 
+// 预设主流模型 — 用户只需选模型 + 填 Key
+const PRESET_MODELS = [
+  { id: 'gpt-4o', name: 'GPT-4o', icon: '🧠', type: 'openai', endpoint: 'https://api.openai.com', model: 'gpt-4o', color: '#10a37f' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini', icon: '⚡', type: 'openai', endpoint: 'https://api.openai.com', model: 'gpt-4o-mini', color: '#10a37f' },
+  { id: 'claude-sonnet', name: 'Claude 3.5 Sonnet', icon: '🎭', type: 'openai', endpoint: 'https://api.anthropic.com', model: 'claude-3-5-sonnet-20241022', color: '#d97706' },
+  { id: 'deepseek', name: 'DeepSeek V3', icon: '🐋', type: 'openai', endpoint: 'https://api.deepseek.com', model: 'deepseek-chat', color: '#4f46e5' },
+  { id: 'qwen', name: '通义千问', icon: '☁️', type: 'openai', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', color: '#6366f1' },
+  { id: 'glm', name: '智谱 GLM-4', icon: '🔮', type: 'openai', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4', color: '#059669' },
+  { id: 'moonshot', name: 'Moonshot', icon: '🌙', type: 'openai', endpoint: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k', color: '#1e1e1e' },
+  { id: 'ollama', name: 'Ollama 本地', icon: '🦙', type: 'ollama', endpoint: 'http://localhost:11434', model: 'llama3', color: '#f59e0b' },
+];
+
 export default function ModelView() {
   const [models, setModels] = useState([]);
   const [stats, setStats] = useState(null);
@@ -17,6 +29,8 @@ export default function ModelView() {
   const [form, setForm] = useState(INITIAL_FORM);
   const [testing, setTesting] = useState({});
   const [testResult, setTestResult] = useState({});
+  const [quickModel, setQuickModel] = useState(null); // 当前选中的预设模型
+  const [quickKey, setQuickKey] = useState('');
 
   const loadModels = useCallback(async () => {
     setLoading(true);
@@ -82,6 +96,34 @@ export default function ModelView() {
 
   const typeLabel = (t) => MODEL_TYPES.find(m => m.value === t)?.label || t;
 
+  // 快捷添加预设模型
+  const handleQuickAdd = async () => {
+    if (!quickModel || !quickKey.trim()) return;
+    try {
+      await window.electronAPI?.models.create({
+        name: quickModel.name,
+        type: quickModel.type,
+        endpoint: quickModel.endpoint,
+        apiKeyEncrypted: quickKey.trim(),
+        modelIdentifier: quickModel.model,
+        extraParams: {},
+      });
+      setQuickModel(null);
+      setQuickKey('');
+      loadModels();
+    } catch (e) {
+      console.error('Quick add failed:', e);
+    }
+  };
+
+  // 检查预设模型是否已配置
+  const isPresetConfigured = (preset) => {
+    return models.some(m =>
+      m.endpoint === preset.endpoint &&
+      (m.model_identifier === preset.model || m.name === preset.name)
+    );
+  };
+
   return (
     <div className="model-view">
       <div className="mv-header">
@@ -112,7 +154,57 @@ export default function ModelView() {
         </div>
       )}
 
-      {/* 模型列表 */}
+      {/* 快捷配置 */}
+      <div className="mv-quick-section">
+        <div className="mv-quick-header">
+          <span>⚡ 快捷配置</span>
+          <span className="mv-quick-hint">选择模型，输入 API Key 即可一键添加</span>
+        </div>
+        <div className="mv-quick-grid">
+          {PRESET_MODELS.map(p => {
+            const configured = isPresetConfigured(p);
+            return (
+              <button
+                key={p.id}
+                className={`mv-quick-card ${configured ? 'mv-quick-configured' : ''} ${quickModel?.id === p.id ? 'mv-quick-selected' : ''}`}
+                onClick={() => { setQuickModel(p); setQuickKey(''); }}
+                style={{ '--card-color': p.color }}
+              >
+                <span className="mv-quick-icon">{p.icon}</span>
+                <span className="mv-quick-name">{p.name}</span>
+                {configured && <span className="mv-quick-check">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 选中预设后的 Key 输入面板 */}
+        {quickModel && (
+          <div className="mv-quick-panel">
+            <div className="mv-quick-panel-header">
+              <span>{quickModel.icon} {quickModel.name}</span>
+              <span className="mv-quick-endpoint">{quickModel.endpoint}</span>
+            </div>
+            <div className="mv-quick-panel-body">
+              <input
+                className="input"
+                type="password"
+                placeholder={`输入 ${quickModel.name} 的 API Key`}
+                value={quickKey}
+                onChange={e => setQuickKey(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleQuickAdd(); }}
+                autoFocus
+              />
+              <div className="mv-quick-panel-actions">
+                <button className="btn btn-secondary btn-sm" onClick={() => setQuickModel(null)}>取消</button>
+                <button className="btn btn-primary btn-sm" onClick={handleQuickAdd} disabled={!quickKey.trim()}>
+                  一键添加
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       {loading ? (
         <div className="skeleton" style={{ height: '200px', marginTop: '16px' }} />
       ) : models.length === 0 ? (
@@ -219,6 +311,37 @@ export default function ModelView() {
         .mv-stat-item { flex: 1; background: var(--bg-surface); border-radius: 8px; padding: 14px; text-align: center; }
         .mv-stat-num { display: block; font-size: 22px; font-weight: 700; color: var(--accent); }
         .mv-stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        /* 快捷配置 */
+        .mv-quick-section { margin-bottom: 20px; flex-shrink: 0; }
+        .mv-quick-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .mv-quick-hint { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+        .mv-quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px; }
+        .mv-quick-card {
+          display: flex; align-items: center; gap: 8px;
+          padding: 10px 12px;
+          border: 1px solid var(--border-default); border-radius: 10px;
+          background: var(--bg-surface); color: var(--text-secondary);
+          cursor: pointer; font-size: 13px; font-family: inherit;
+          transition: all 0.15s; position: relative;
+        }
+        .mv-quick-card:hover { border-color: var(--card-color, var(--accent)); color: var(--text-primary); background: var(--bg-elevated); }
+        .mv-quick-card.mv-quick-selected { border-color: var(--card-color, var(--accent)); box-shadow: inset 0 0 0 1px var(--card-color, var(--accent)); }
+        .mv-quick-card.mv-quick-configured { opacity: 0.6; }
+        .mv-quick-icon { font-size: 18px; flex-shrink: 0; }
+        .mv-quick-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mv-quick-check { position: absolute; top: 4px; right: 6px; font-size: 10px; color: var(--success); }
+        .mv-quick-panel {
+          margin-top: 10px; padding: 14px;
+          background: var(--bg-surface); border: 1px solid var(--border-default);
+          border-radius: 10px; border-left: 3px solid var(--card-color, var(--accent));
+        }
+        .mv-quick-panel-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 14px; font-weight: 600; }
+        .mv-quick-endpoint { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+        .mv-quick-panel-body { display: flex; gap: 8px; align-items: center; }
+        .mv-quick-panel-body .input { flex: 1; }
+        .mv-quick-panel-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
         .mv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
         .mv-card { background: var(--bg-surface); border-radius: 10px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; transition: background 0.15s; }
         .mv-card:hover { background: var(--bg-elevated); }
