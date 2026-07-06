@@ -7,7 +7,7 @@ const PRIORITY_CONFIG = {
   P3: { color: 'var(--priority-p3)', label: '低优' },
 };
 
-export default function TaskCard({ task, onClick, onComplete, onDragEnd, style }) {
+export default function TaskCard({ task, onClick, onComplete, onDelete, onDragEnd, style }) {
   const priority = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.P2;
   const isCompleted = task.status === 'completed';
   const isPast = task.end_time && new Date(task.end_time) < new Date() && !isCompleted;
@@ -61,15 +61,29 @@ export default function TaskCard({ task, onClick, onComplete, onDragEnd, style }
           ))}
         </div>
       </div>
-      {!isCompleted && (
+      <div className="task-actions">
+        {!isCompleted && (
+          <button
+            className="task-action-btn task-complete-btn"
+            onClick={(e) => { e.stopPropagation(); onComplete?.(); }}
+            title="标记完成"
+          >
+            ✓
+          </button>
+        )}
         <button
-          className="task-complete-btn"
-          onClick={(e) => { e.stopPropagation(); onComplete?.(); }}
-          title="标记完成"
+          className="task-action-btn task-delete-btn"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (window.confirm(`确定删除「${task.title}」吗？`)) {
+              onDelete?.(task.id);
+            }
+          }}
+          title="删除"
         >
-          ○
+          ✕
         </button>
-      )}
+      </div>
 
       <style>{`
         .task-card {
@@ -124,22 +138,36 @@ export default function TaskCard({ task, onClick, onComplete, onDragEnd, style }
           border-radius: 3px;
           font-size: 10px;
         }
-        .task-complete-btn {
+        .task-actions {
+          display: flex;
+          flex-direction: column;
+          flex-shrink: 0;
+          opacity: 0;
+          transition: opacity 0.15s;
+        }
+        .task-card:hover .task-actions {
+          opacity: 1;
+        }
+        .task-action-btn {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 28px;
-          flex-shrink: 0;
+          width: 24px;
+          height: 50%;
           border: none;
           background: transparent;
           color: var(--text-muted);
-          font-size: 16px;
+          font-size: 12px;
           cursor: pointer;
           transition: all 0.15s;
         }
         .task-complete-btn:hover {
           color: var(--success);
-          background: rgba(74, 222, 128, 0.1);
+          background: rgba(74, 222, 128, 0.15);
+        }
+        .task-delete-btn:hover {
+          color: var(--danger);
+          background: rgba(233, 69, 96, 0.15);
         }
       `}</style>
     </div>

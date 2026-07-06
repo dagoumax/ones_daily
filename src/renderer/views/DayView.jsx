@@ -53,6 +53,11 @@ export default function DayView({ date, onDateChange }) {
     loadTasks();
   };
 
+  const handleDelete = async (id) => {
+    await window.electronAPI?.tasks.delete(id);
+    loadTasks();
+  };
+
   const handleDragEnd = async (task, deltaY) => {
     if (!task.start_time) return;
     const pxPerHour = 60; // 60px = 1 hour
@@ -139,6 +144,7 @@ export default function DayView({ date, onDateChange }) {
                   task={task}
                   onClick={() => handleTaskClick(task)}
                   onComplete={() => handleComplete(task.id)}
+                  onDelete={() => handleDelete(task.id)}
                   onDragEnd={(deltaY) => handleDragEnd(task, deltaY)}
                   style={getTaskPosition(task)}
                 />
