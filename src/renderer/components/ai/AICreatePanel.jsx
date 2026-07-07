@@ -157,7 +157,6 @@ export default function AICreatePanel({ onCreated, onCancel }) {
         } else {
           setDialogState('REPLY');
           resetRoundCount();
-          addMessage({ role: 'system', content: getSuccessMessage(confirmToolName, data) });
           addMessage({ role: 'assistant', content: response?.content || '操作完成。' });
         }
       } else {

@@ -488,9 +488,16 @@ function registerAiHandlers(mainWindow) {
     const db = getDatabase();
     const taskId = args.task_id || args.id;
     if (taskId) {
+      // 删除前先查出任务标题，让 LLM 能生成自然语言回复
+      let taskTitle = '';
+      const stmt = db.prepare("SELECT title FROM tasks WHERE id = ?");
+      stmt.bind([taskId]);
+      if (stmt.step()) taskTitle = stmt.getAsObject().title;
+      stmt.free();
+
       dbRun("DELETE FROM tasks WHERE id = ?", [taskId]);
       console.log(`[ai:chat:confirm] Task deleted: ${taskId}`);
-      return { deleted: true, task_id: taskId };
+      return { deleted: true, task_id: taskId, title: taskTitle };
     }
     return { deleted: false, error: '缺少 task_id' };
   }
@@ -500,12 +507,18 @@ function registerAiHandlers(mainWindow) {
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const taskId = args.task_id || args.id;
     if (taskId) {
+      let taskTitle = '';
+      const stmt = db.prepare("SELECT title FROM tasks WHERE id = ?");
+      stmt.bind([taskId]);
+      if (stmt.step()) taskTitle = stmt.getAsObject().title;
+      stmt.free();
+
       dbRun(
         "UPDATE tasks SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
         [now, now, taskId]
       );
       console.log(`[ai:chat:confirm] Task completed: ${taskId}`);
-      return { completed: true, task_id: taskId };
+      return { completed: true, task_id: taskId, title: taskTitle };
     }
     return { completed: false, error: '缺少 task_id' };
   }
@@ -515,9 +528,15 @@ function registerAiHandlers(mainWindow) {
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const taskId = args.task_id || args.id;
     if (taskId) {
+      let taskTitle = '';
+      const stmt = db.prepare("SELECT title FROM tasks WHERE id = ?");
+      stmt.bind([taskId]);
+      if (stmt.step()) taskTitle = stmt.getAsObject().title;
+      stmt.free();
+
       const fields = [];
       const params = [];
-      if (args.title) { fields.push('title = ?'); params.push(args.title); }
+      if (args.title) { fields.push('title = ?'); params.push(args.title); taskTitle = args.title; }
       if (args.start_time) { fields.push('start_time = ?'); params.push(args.start_time); }
       if (args.end_time) { fields.push('end_time = ?'); params.push(args.end_time); }
       if (args.priority) { fields.push('priority = ?'); params.push(args.priority); }
@@ -527,7 +546,7 @@ function registerAiHandlers(mainWindow) {
 
       dbRun(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, params);
       console.log(`[ai:chat:confirm] Task updated: ${taskId}`);
-      return { updated: true, task_id: taskId };
+      return { updated: true, task_id: taskId, title: taskTitle };
     }
     return { updated: false, error: '缺少 task_id' };
   }

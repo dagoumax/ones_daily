@@ -475,21 +475,28 @@ function executeDailyBrief(args) {
     [date]
   ).map(formatTask);
 
+  // 精简任务数据，只保留播报需要的字段
+  const taskSummary = (tasks) => tasks.map(t => ({
+    title: t.title,
+    time: t.start_time ? new Date(t.start_time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '',
+    priority: t.priority,
+  }));
+
   return {
     success: true,
     require_confirmation: false,  // tool 只返回数据，LLM 下一轮生成播报
     date,
     style,
-    tasks: todayTasks,
+    today_tasks: taskSummary(todayTasks),
+    pending_list: taskSummary(pending),
+    completed_list: taskSummary(completed),
     stats: {
       total,
       completed: completed.length,
       pending: pending.length,
       completion_rate: completionRate,
     },
-    overdue: overdueTasks,
-    // 给 LLM 的提示：用这些数据生成自然语言播报
-    _llm_instruction: '请根据以上数据生成自然语言每日播报。根据 style 决定详细程度。',
+    overdue: taskSummary(overdueTasks),
   };
 }
 
@@ -528,13 +535,22 @@ function executeDailyReview(args) {
   const weekCompleted = weekTasks.find(r => r.status === 'completed')?.count || 0;
   const weekTotal = weekTasks.reduce((sum, r) => sum + r.count, 0);
 
+  // 精简任务数据
+  const taskSummary = (tasks) => tasks.map(t => ({
+    title: t.title,
+    time: t.start_time ? new Date(t.start_time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '',
+    priority: t.priority,
+  }));
+
   return {
     success: true,
     require_confirmation: false,  // tool 只返回数据，LLM 下一轮生成复盘
     date,
-    completed,
-    pending,
-    tomorrow: tomorrowTasks,
+    today_summary: {
+      completed: taskSummary(completed),
+      pending: taskSummary(pending),
+    },
+    tomorrow_preview: taskSummary(tomorrowTasks),
     stats: {
       total,
       completed_count: completed.length,
@@ -546,8 +562,6 @@ function executeDailyReview(args) {
       completed: weekCompleted,
       completion_rate: weekTotal > 0 ? Math.round((weekCompleted / weekTotal) * 100) : 0,
     },
-    // 给 LLM 的提示
-    _llm_instruction: '请根据以上数据生成每日复盘分析，包括完成情况总结、未完成任务原因分析、效率评估和改进建议。',
   };
 }
 
