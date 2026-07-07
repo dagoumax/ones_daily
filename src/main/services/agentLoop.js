@@ -161,7 +161,12 @@ async function resumeAgentLoop(confirmId, action, model) {
   const db = getDatabase();
 
   // 从 ai_decisions 恢复状态
-  const decision = dbGet("SELECT * FROM ai_decisions WHERE id = ?", [confirmId]);
+  let decision = null;
+  const stmt = db.prepare("SELECT * FROM ai_decisions WHERE id = ?");
+  stmt.bind([confirmId]);
+  if (stmt.step()) decision = stmt.getAsObject();
+  stmt.free();
+
   if (!decision) {
     return {
       type: 'error',
@@ -197,7 +202,7 @@ async function resumeAgentLoop(confirmId, action, model) {
   });
 
   // 更新 ai_decisions 记录
-  dbRun(
+  db.run(
     "UPDATE ai_decisions SET user_choice = ?, accepted = ? WHERE id = ?",
     [action, action === 'confirm' ? 1 : 0, confirmId]
   );

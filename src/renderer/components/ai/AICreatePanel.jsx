@@ -458,6 +458,7 @@ function isNonCreateIntent(text) {
   const deletePatterns = [
     /不去/, /不做了/, /不搞了/, /取消/, /删除/, /算了/,
     /不要了/, /不去了/, /不干了/, /不用了/, /免了/,
+    /没有.*了/, /没了/, /不.*了$/,
   ];
   if (deletePatterns.some(p => p.test(lower))) return true;
 
