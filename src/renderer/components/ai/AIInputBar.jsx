@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 export default function AIInputBar({ onSend, disabled, modelName, onExit }) {
   const [input, setInput] = useState('');
-  const [voiceText, setVoiceText] = useState('');
   const [voiceStatus, setVoiceStatus] = useState('idle');
   const [voiceDuration, setVoiceDuration] = useState(0);
   const inputRef = useRef(null);
@@ -14,14 +13,6 @@ export default function AIInputBar({ onSend, disabled, modelName, onExit }) {
   useEffect(() => {
     inputRef.current?.focus();
   }, [disabled]);
-
-  // 语音文字回填
-  useEffect(() => {
-    if (voiceText) {
-      setInput(prev => prev ? `${prev} ${voiceText}` : voiceText);
-      setVoiceText('');
-    }
-  }, [voiceText]);
 
   const handleSend = () => {
     if (!input.trim() || disabled) return;
@@ -95,8 +86,9 @@ export default function AIInputBar({ onSend, disabled, modelName, onExit }) {
       const base64 = btoa(chunks.join(''));
       const result = await window.electronAPI?.voice.transcribe(base64);
       if (result?.text) {
-        setVoiceText(result.text.trim());
         setVoiceStatus('idle');
+        // 转写完成 → 自动发送到 Agent，不回填输入框
+        onSend(result.text.trim());
       } else {
         setVoiceStatus('error');
         setTimeout(() => setVoiceStatus('idle'), 2000);

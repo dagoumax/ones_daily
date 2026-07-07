@@ -193,15 +193,11 @@ function registerVoiceHandlers() {
     try { return require('../services/whisper-processor'); } catch { return null; }
   })();
 
+  const sttService = (() => {
+    try { return require('../services/sttService'); } catch { return null; }
+  })();
+
   // Auto-detect whisper paths
-  // Directory layout:
-  //   resources/
-  //   ├── whisper/            ← whisper.cpp executable + DLLs
-  //   │   ├── whisper-cli.exe
-  //   │   └── ggml-*.dll
-  //   ├── models/             ← whisper model files
-  //   │   └── ggml-small.bin
-  //   └── tray-icon.png
   const appRoot = path.join(__dirname, '..', '..', '..');
   const exePath = path.join(appRoot, 'resources', 'whisper', 'whisper-cli.exe');
   const modelPath = path.join(appRoot, 'resources', 'models', 'ggml-small.bin');
@@ -228,20 +224,71 @@ function registerVoiceHandlers() {
   });
 
   ipcMain.handle('voice:transcribe', async (_, audioBase64) => {
-    if (!whisperModule || !whisperReady) return { text: '', error: 'Whisper not initialized' };
+    // 使用 sttService 统一接口（自动根据配置选择 whisper/mimo）
     try {
       const audioBuffer = Buffer.from(audioBase64, 'base64');
       console.log('[IPC] Audio buffer size:', audioBuffer.length, 'bytes');
+
+      if (sttService) {
+        const provider = sttService.getSTTProvider();
+        console.log('[IPC] Using STT provider:', provider.name);
+        const result = await provider.transcribe(audioBuffer);
+        return { text: result.text, confidence: result.confidence, provider: result.provider };
+      }
+
+      // Fallback: 直接使用 whisper
+      if (!whisperModule || !whisperReady) return { text: '', error: 'STT 服务未初始化' };
       const result = await whisperModule.whisper.transcribeBuffer(audioBuffer);
-      return { text: result.text, confidence: result.confidence };
+      return { text: result.text, confidence: result.confidence, provider: 'whisper' };
     } catch (e) {
+      console.error('[IPC] Transcribe failed:', e.message);
       return { text: '', error: e.message };
     }
   });
 
   ipcMain.handle('voice:getStatus', () => {
+    if (sttService) {
+      const config = sttService.getSTTConfig();
+      const whisperStatus = whisperModule && whisperReady
+        ? whisperModule.whisper.status
+        : { state: 'not_available' };
+      return {
+        currentProvider: config.provider,
+        whisper: whisperStatus,
+        hasApiKey: !!config.apiKey,
+      };
+    }
     if (!whisperModule || !whisperReady) return { state: 'not_available', modelLoaded: false };
     return whisperModule.whisper.status;
+  });
+
+  // STT 提供商配置
+  ipcMain.handle('voice:getProviders', () => {
+    if (!sttService) return { providers: [{ name: 'whisper', label: 'Whisper 本地', description: '离线可用' }] };
+    return { providers: sttService.getAvailableProviders() };
+  });
+
+  ipcMain.handle('voice:setProvider', async (_, provider, apiKey, endpoint) => {
+    if (!sttService) return { success: false, error: 'STT 服务不可用' };
+    try {
+      sttService.setSTTConfig(provider, apiKey, endpoint);
+      console.log(`[IPC] STT provider set to: ${provider}`);
+      return { success: true, provider };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('voice:testProvider', async (_, provider, apiKey) => {
+    if (!sttService) return { success: false, error: 'STT 服务不可用' };
+    try {
+      const Provider = provider === 'mimo' ? sttService.MiMoProvider : sttService.WhisperProvider;
+      const instance = new Provider();
+      const available = await instance.isAvailable();
+      return { success: true, available };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   });
 
   ipcMain.handle('voice:speak', () => ({ status: 'not_implemented' }));

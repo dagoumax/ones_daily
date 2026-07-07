@@ -72,6 +72,12 @@ export default function ModelView() {
   const [quickModel, setQuickModel] = useState(null); // 当前选中的预设模型
   const [quickKey, setQuickKey] = useState('');
 
+  // STT 配置
+  const [sttProvider, setSttProvider] = useState('whisper');
+  const [sttApiKey, setSttApiKey] = useState('');
+  const [sttProviders, setSttProviders] = useState([]);
+  const [sttSaving, setSttSaving] = useState(false);
+
   const loadModels = useCallback(async () => {
     setLoading(true);
     try {
@@ -84,7 +90,29 @@ export default function ModelView() {
     }
   }, []);
 
-  useEffect(() => { loadModels(); }, [loadModels]);
+  useEffect(() => { loadModels(); loadSTTConfig(); loadSTTProviders(); }, [loadModels]);
+
+  const loadSTTConfig = async () => {
+    try {
+      const status = await window.electronAPI?.voice.getStatus();
+      if (status?.currentProvider) setSttProvider(status.currentProvider);
+    } catch (_) {}
+  };
+
+  const loadSTTProviders = async () => {
+    try {
+      const result = await window.electronAPI?.voice.getProviders();
+      if (result?.providers) setSttProviders(result.providers);
+    } catch (_) {}
+  };
+
+  const handleSTTSave = async () => {
+    setSttSaving(true);
+    try {
+      await window.electronAPI?.voice.setProvider(sttProvider, sttApiKey || undefined);
+    } catch (_) {}
+    setSttSaving(false);
+  };
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.endpoint.trim()) return;
@@ -248,6 +276,45 @@ export default function ModelView() {
           </div>
         )}
       </div>
+
+      {/* STT 语音识别配置 */}
+      <div className="mv-stt-section">
+        <div className="mv-stt-header">
+          <span>🎙️ 语音识别</span>
+          <span className="mv-stt-hint">选择语音转文字服务</span>
+        </div>
+        <div className="mv-stt-body">
+          <select
+            className="input mv-stt-select"
+            value={sttProvider}
+            onChange={e => setSttProvider(e.target.value)}
+          >
+            {(sttProviders.length > 0 ? sttProviders : [
+              { name: 'whisper', label: 'Whisper 本地', description: '离线可用' },
+              { name: 'mimo', label: 'MiMo 云端', description: '小米 MiMo-V2.5-ASR' },
+            ]).map(p => (
+              <option key={p.name} value={p.name}>{p.label} — {p.description}</option>
+            ))}
+          </select>
+          {sttProvider === 'mimo' && (
+            <input
+              className="input mv-stt-key"
+              type="password"
+              placeholder="MiMo API Key（与对话模型共用 Key 则留空）"
+              value={sttApiKey}
+              onChange={e => setSttApiKey(e.target.value)}
+            />
+          )}
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleSTTSave}
+            disabled={sttSaving}
+          >
+            {sttSaving ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
+
       {loading ? (
         <div className="skeleton" style={{ height: '200px', marginTop: '16px' }} />
       ) : models.length === 0 ? (
@@ -384,6 +451,14 @@ export default function ModelView() {
         .mv-quick-panel-body { display: flex; gap: 8px; align-items: center; }
         .mv-quick-panel-body .input { flex: 1; }
         .mv-quick-panel-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+        /* STT 配置 */
+        .mv-stt-section { margin-bottom: 20px; flex-shrink: 0; }
+        .mv-stt-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; font-size: var(--text-sm); font-weight: 600; color: var(--text-primary); }
+        .mv-stt-hint { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+        .mv-stt-body { display: flex; gap: 8px; align-items: center; }
+        .mv-stt-select { flex: 1; max-width: 320px; }
+        .mv-stt-key { flex: 1; }
 
         .mv-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
         .mv-card { background: var(--bg-surface); border-radius: var(--radius-md); padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; transition: background 0.15s; }
