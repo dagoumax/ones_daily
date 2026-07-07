@@ -4,11 +4,27 @@ import AIChatMessage from './AIChatMessage';
 import AIConfirmCard from './AIConfirmCard';
 import AIInputBar from './AIInputBar';
 
+/**
+ * AI 对话面板 — Agent/Tool-calling 模式
+ * 
+ * 状态机:
+ *   IDLE → CHECKING → AGENT_RUNNING → REPLY（文本回复）
+ *                                    → CONFIRM_CREATE（创建确认卡片）
+ *                                    → CONFIRM_DELETE（删除确认卡片）
+ *                                    → CONFIRM_COMPLETE（完成确认卡片）
+ *                                    → CONFIRM_UPDATE（更新确认卡片）
+ *                                    → FALLBACK（降级本地解析）
+ */
 export default function AICreatePanel({ onCreated, onCancel }) {
   const {
-    messages, isChatting, dialogState, pendingSlots, sessionId, roundCount,
-    addMessage, setIsChatting, setDialogState, setPendingSlots, setMissingSlots,
+    messages, isChatting, dialogState,
+    pendingConfirmId, confirmToolName, confirmPreview,
+    sessionId, roundCount,
+    addMessage, setIsChatting, setDialogState,
+    setConfirmState, clearConfirmState,
     setSessionId, incrementRound, resetRoundCount, resetChat,
+    // 兼容旧模式
+    setPendingSlots, setMissingSlots,
   } = useAiStore();
 
   const messagesEndRef = useRef(null);
@@ -18,137 +34,142 @@ export default function AICreatePanel({ onCreated, onCancel }) {
     if (messages.length === 0) {
       addMessage({
         role: 'assistant',
-        content: '你好！我是 AI 任务助手。直接告诉我你想做什么，比如"明天下午开会讨论项目"或"帮我记一下买牛奶"。',
+        content: '你好！我是 AI 任务助手。你可以直接告诉我：\n• "明天下午开会" — 创建任务\n• "今天不去健身房了" — 取消任务\n• "项目评审做完了" — 完成任务\n• "今天有什么安排" — 查看任务',
       });
     }
   }, []);
 
-  // 自动滚动到底部
+  // 自动滚动
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, dialogState]);
 
-  // 处理用户发送消息
-  const handleSend = useCallback(async (text) => {
+  // ── 主入口：处理用户输入 ──
+  const handleInput = useCallback(async (text) => {
     if (isChatting) return;
 
-    // 添加用户消息
     addMessage({ role: 'user', content: text });
     setIsChatting(true);
     setDialogState('CHECKING');
 
     try {
-      // 1. 本地预筛
+      // 1. 本地预筛（保留 parseInput.js，快速路径）
       const { parseInput } = await import('../../utils/parseInput');
       const parsed = parseInput(text);
-
       const isValidTitle = parsed.title && parsed.title.length >= 2 && !/^[\s\d\p{P}]+$/u.test(parsed.title);
       const isValidTime = parsed.startTime && new Date(parsed.startTime) > new Date();
 
       if (isValidTitle && isValidTime) {
-        // 本地预筛命中：直接创建
-        await createTaskFromSlots({
+        // 本地命中 → 直接走创建确认
+        const taskPreview = {
           title: parsed.title,
-          startTime: parsed.startTime,
-          endTime: parsed.endTime || null,
+          start_time: parsed.startTime,
+          end_time: parsed.endTime || null,
           priority: parsed.priority || 'P2',
           tags: parsed.tags || [],
+          location: '',
+          notes: '',
+        };
+        setConfirmState({
+          confirmId: null,
+          toolName: 'create_task',
+          preview: { task_preview: taskPreview, message: `即将创建任务「${parsed.title}」` },
         });
+        setDialogState('CONFIRM_CREATE');
+        addMessage({ role: 'assistant', content: '已解析任务信息，请确认：', toolCallType: 'create_task' });
+        setIsChatting(false);
         return;
       }
 
       if (isValidTitle && !isValidTime) {
-        // 只有标题，追问时间
-        addMessage({
-          role: 'assistant',
-          content: `好的，已记录"${parsed.title}"。请问具体什么时间？`,
-        });
+        addMessage({ role: 'assistant', content: `好的，已记录「${parsed.title}」。请问具体什么时间？` });
         setPendingSlots({ title: parsed.title, priority: parsed.priority || 'P2', tags: parsed.tags || [] });
         setMissingSlots(['startTime']);
-        setDialogState('WAITING');
+        setDialogState('REPLY');
         setIsChatting(false);
         return;
       }
 
-      if (!isValidTitle && isValidTime) {
-        // 只有时间，追问标题
-        addMessage({
-          role: 'assistant',
-          content: '请问要做什么？',
-        });
-        setPendingSlots({ startTime: parsed.startTime, priority: parsed.priority || 'P2', tags: parsed.tags || [] });
-        setMissingSlots(['title']);
-        setDialogState('WAITING');
-        setIsChatting(false);
-        return;
-      }
-
-      // 2. 本地预筛未命中，调用 LLM
-      setDialogState('LLM_CALL');
-      const currentPendingSlots = useAiStore.getState().pendingSlots;
-
+      // 2. 本地未命中 → 走 Agent 循环
+      setDialogState('AGENT_RUNNING');
       const response = await window.electronAPI?.ai.chat({
         message: text,
         sessionId: sessionId || undefined,
-        history: messages.slice(-6), // 最近 6 条消息作为上下文
-        existingSlots: Object.keys(currentPendingSlots).length > 0 ? currentPendingSlots : undefined,
+        history: messages.slice(-10),
       });
 
       if (!response?.success) {
-        // LLM 调用失败，降级
         handleFallback(text, response?.error);
         return;
       }
 
-      // 保存 sessionId
-      if (response.sessionId) {
-        setSessionId(response.sessionId);
-      }
+      if (response.sessionId) setSessionId(response.sessionId);
 
-      const { intent, slots, missingFields, followUpQuestion, reply, confirmCard } = response;
-
-      if (confirmCard && slots) {
-        // 槽位完整，展示确认卡片
-        setPendingSlots(slots);
-        setDialogState('CONFIRM');
-        addMessage({
-          role: 'assistant',
-          content: reply || '已解析任务信息，请确认：',
-          slots,
-          confirmCard: true,
-        });
-        resetRoundCount();
-      } else if (missingFields && missingFields.length > 0) {
-        // 信息不足，追问
-        setPendingSlots(slots || {});
-        setMissingSlots(missingFields);
-        setDialogState('WAITING');
-        incrementRound();
-        addMessage({
-          role: 'assistant',
-          content: followUpQuestion || reply || `请补充以下信息：${missingFields.join('、')}`,
-          slots,
-        });
-      } else {
-        // 非 create_task 意图
-        setDialogState('IDLE');
-        addMessage({
-          role: 'assistant',
-          content: reply || '此功能将在后续版本支持。现在可以试试创建任务，比如"明天下午3点开会"。',
-          intent,
-        });
-        resetRoundCount();
-      }
+      // 3. 处理 Agent 响应
+      handleAgentResponse(response, text);
 
     } catch (e) {
-      console.error('AI chat error:', e);
+      console.error('[AICreatePanel] Error:', e);
       handleFallback(text, e.message);
     } finally {
       setIsChatting(false);
     }
   }, [isChatting, messages, sessionId]);
 
-  // 降级处理
+  // ── 处理 Agent 循环响应 ──
+  const handleAgentResponse = useCallback((response, originalText) => {
+    switch (response.type) {
+      case 'confirm': {
+        // 需要确认的操作
+        const stateMap = {
+          create_task: 'CONFIRM_CREATE',
+          delete_task: 'CONFIRM_DELETE',
+          complete_task: 'CONFIRM_COMPLETE',
+          update_task: 'CONFIRM_UPDATE',
+        };
+        const newState = stateMap[response.toolName] || 'REPLY';
+
+        setConfirmState({
+          confirmId: response.confirmId,
+          toolName: response.toolName,
+          preview: response.preview,
+        });
+        setDialogState(newState);
+
+        // 如果有候选列表 → CONFIRM_CANDIDATES
+        if (response.preview?.candidates) {
+          setDialogState('CONFIRM_CANDIDATES');
+        }
+
+        addMessage({
+          role: 'assistant',
+          content: response.preview?.message || '请确认操作：',
+          toolCallType: response.toolName,
+        });
+        break;
+      }
+
+      case 'reply': {
+        setDialogState('REPLY');
+        resetRoundCount();
+        addMessage({
+          role: 'assistant',
+          content: response.content || '好的，已完成。',
+        });
+        break;
+      }
+
+      default: {
+        setDialogState('REPLY');
+        addMessage({
+          role: 'assistant',
+          content: '收到，还有什么需要帮你的？',
+        });
+      }
+    }
+  }, []);
+
+  // ── 降级处理 ──
   const handleFallback = useCallback(async (text, errorMsg) => {
     setDialogState('FALLBACK');
     const { parseInput } = await import('../../utils/parseInput');
@@ -160,7 +181,7 @@ export default function AICreatePanel({ onCreated, onCancel }) {
     });
 
     if (parsed.title) {
-      await createTaskFromSlots({
+      await createTaskDirectly({
         title: parsed.title,
         startTime: parsed.startTime || new Date().toISOString(),
         endTime: parsed.endTime || null,
@@ -168,146 +189,170 @@ export default function AICreatePanel({ onCreated, onCancel }) {
         tags: parsed.tags || [],
       });
     } else {
-      addMessage({
-        role: 'assistant',
-        content: '无法解析输入，请手动填写任务信息或稍后重试。',
-      });
-      // 3 秒后自动退出 AI 模式
+      addMessage({ role: 'assistant', content: '无法解析输入，请手动填写任务信息或稍后重试。' });
       setTimeout(() => onCancel?.(), 3000);
     }
   }, []);
 
-  // 确认创建任务
-  const handleConfirm = useCallback(async (slots) => {
+  // ── 确认操作（用户点击确认按钮）──
+  const handleConfirm = useCallback(async (data) => {
     setIsChatting(true);
-    setDialogState('CREATING');
-    await createTaskFromSlots(slots);
-  }, []);
-
-  // 行内编辑
-  const handleEdit = useCallback((updatedSlots) => {
-    setPendingSlots(updatedSlots);
-  }, []);
-
-  // 自然语言修改
-  const handleNaturalEdit = useCallback(async (text) => {
-    // 作为普通消息处理，但不计入追问轮数
-    addMessage({ role: 'user', content: text });
-    setIsChatting(true);
-    setDialogState('LLM_CALL');
 
     try {
-      const currentSlots = useAiStore.getState().pendingSlots;
+      if (!pendingConfirmId) {
+        // 本地预筛路径：直接创建
+        await createTaskDirectly({
+          title: data.title,
+          startTime: data.start_time || data.startTime,
+          endTime: data.end_time || data.endTime,
+          priority: data.priority || 'P2',
+          tags: data.tags || [],
+          location: data.location || '',
+          notes: data.notes || '',
+        });
+        return;
+      }
+
+      // Agent 路径：发送确认回调
+      setDialogState('AGENT_RUNNING');
       const response = await window.electronAPI?.ai.chat({
-        message: text,
-        sessionId,
-        existingSlots: currentSlots,
+        confirmedToolCall: {
+          confirmId: pendingConfirmId,
+          toolName: confirmToolName,
+          toolArgs: data,
+          action: 'confirm',
+        },
       });
 
-      if (response?.success && response.slots) {
-        setPendingSlots(response.slots);
-        setDialogState('CONFIRM');
-        addMessage({
-          role: 'assistant',
-          content: '已更新，请确认：',
-          slots: response.slots,
-          confirmCard: true,
-        });
+      clearConfirmState();
+
+      if (response?.success) {
+        if (response.type === 'confirm') {
+          // Agent 返回了新的确认（罕见：删除后 LLM 可能建议创建替代任务）
+          handleAgentResponse(response);
+        } else {
+          // 操作完成
+          setDialogState('REPLY');
+          resetRoundCount();
+          addMessage({
+            role: 'system',
+            content: getSuccessMessage(confirmToolName, data),
+          });
+          addMessage({
+            role: 'assistant',
+            content: response?.content || '操作完成。还有什么需要帮你的？',
+          });
+          setTimeout(() => onCreated?.(), 800);
+        }
+      } else {
+        addMessage({ role: 'system', content: `操作失败: ${response?.error || '未知错误'}` });
+        setDialogState('REPLY');
       }
     } catch (e) {
-      addMessage({
-        role: 'system',
-        content: `修改失败: ${e.message}`,
-      });
+      console.error('[AICreatePanel] Confirm error:', e);
+      addMessage({ role: 'system', content: `操作失败: ${e.message}` });
+      setDialogState('REPLY');
     } finally {
       setIsChatting(false);
     }
-  }, [sessionId]);
+  }, [pendingConfirmId, confirmToolName]);
 
-  // 取消确认
-  const handleCancelConfirm = useCallback(() => {
-    resetChat();
-    addMessage({
-      role: 'assistant',
-      content: '已取消。还有什么我可以帮你的？',
-    });
-  }, []);
+  // ── 取消确认 ──
+  const handleCancelConfirm = useCallback(async () => {
+    if (pendingConfirmId) {
+      // Agent 路径：发送取消回调
+      setIsChatting(true);
+      try {
+        const response = await window.electronAPI?.ai.chat({
+          confirmedToolCall: {
+            confirmId: pendingConfirmId,
+            toolName: confirmToolName,
+            toolArgs: {},
+            action: 'cancel',
+          },
+        });
+        clearConfirmState();
+        setDialogState('REPLY');
+        addMessage({
+          role: 'assistant',
+          content: response?.content || '已取消操作。还有什么需要帮你的？',
+        });
+      } catch (e) {
+        clearConfirmState();
+        setDialogState('REPLY');
+        addMessage({ role: 'assistant', content: '已取消。' });
+      } finally {
+        setIsChatting(false);
+      }
+    } else {
+      // 本地预筛路径
+      clearConfirmState();
+      resetChat();
+      addMessage({ role: 'assistant', content: '已取消。还有什么我可以帮你的？' });
+    }
+  }, [pendingConfirmId, confirmToolName]);
 
-  // 创建任务
-  const createTaskFromSlots = async (slots) => {
+  // ── 直接创建任务（本地预筛 / 降级路径）──
+  const createTaskDirectly = async (task) => {
     try {
       await window.electronAPI?.tasks.create({
-        title: slots.title,
-        priority: slots.priority || 'P2',
-        startTime: slots.startTime,
-        endTime: slots.endTime || null,
-        tags: slots.tags || [],
-        participants: slots.participants || [],
-        location: slots.location || '',
-        description: slots.notes || '',
+        title: task.title,
+        priority: task.priority || 'P2',
+        startTime: task.startTime,
+        endTime: task.endTime || null,
+        tags: task.tags || [],
+        participants: [],
+        location: task.location || '',
+        description: task.notes || '',
         source: 'ai_create',
       });
 
-      addMessage({
-        role: 'system',
-        content: `✅ 任务"${slots.title}"已创建成功！`,
-      });
-
-      setDialogState('IDLE');
+      addMessage({ role: 'system', content: `✅ 任务「${task.title}」已创建成功！` });
+      setDialogState('REPLY');
       resetRoundCount();
-      setIsChatting(false);
-
-      // 通知父组件
       setTimeout(() => onCreated?.(), 800);
     } catch (e) {
-      addMessage({
-        role: 'system',
-        content: `创建失败: ${e.message}。请重试。`,
-      });
-      setIsChatting(false);
+      addMessage({ role: 'system', content: `创建失败: ${e.message}。请重试。` });
     }
   };
 
-  // 检查是否超过 3 轮追问
+  // ── 3 轮追问保护 ──
   useEffect(() => {
-    if (roundCount >= 3 && dialogState === 'WAITING') {
+    if (roundCount >= 3) {
       handleFallback('', '已超过 3 轮追问');
     }
-  }, [roundCount, dialogState]);
+  }, [roundCount]);
 
-  // 判断确认卡片中的用户回复：是修改还是确认/取消
-  const processConfirmReply = useCallback((text) => {
-    const lower = text.toLowerCase().trim();
-    if (lower === '好的' || lower === '可以' || lower === 'ok' || lower === '确认' || lower === '行' || lower === '好') {
-      const slots = useAiStore.getState().pendingSlots;
-      if (slots && slots.title) {
-        handleConfirm(slots);
-        return true;
+  // ── 判断是否在确认状态 ──
+  const isConfirming = ['CONFIRM_CREATE', 'CONFIRM_DELETE', 'CONFIRM_COMPLETE', 'CONFIRM_UPDATE', 'CONFIRM_CANDIDATES'].includes(dialogState);
+
+  // 确认状态下的用户输入处理（简化：直接走 Agent）
+  const handleConfirmInput = useCallback((text) => {
+    const lower = text.trim();
+    // 快捷确认/取消词
+    if (['好的', '可以', 'ok', '确认', '行', '好'].includes(lower)) {
+      if (confirmPreview?.task_preview) {
+        handleConfirm(confirmPreview.task_preview);
+      } else if (confirmPreview?.task) {
+        handleConfirm(confirmPreview.task);
       }
+      return;
     }
-    if (lower === '算了' || lower === '不用了' || lower === '取消') {
+    if (['算了', '不用了', '取消'].includes(lower)) {
       handleCancelConfirm();
-      return true;
+      return;
     }
-    // 自然语言修改（包含"改"字或直接输入新值）
-    if (lower.includes('改成') || lower.includes('改为') || lower.includes('换成')) {
-      handleNaturalEdit(text);
-      return true;
-    }
-    return false; // 不是确认/取消/修改
-  }, [handleConfirm, handleCancelConfirm, handleNaturalEdit]);
+    // 否则当作新对话
+    handleInput(text);
+  }, [confirmPreview, handleConfirm, handleCancelConfirm, handleInput]);
 
-  // 包装 handleSend，在 CONFIRM 状态时先检查
-  const handleInput = useCallback((text) => {
-    if (dialogState === 'CONFIRM') {
-      const handled = processConfirmReply(text);
-      if (handled) return;
+  const handleUserInput = useCallback((text) => {
+    if (isConfirming) {
+      handleConfirmInput(text);
+    } else {
+      handleInput(text);
     }
-    handleSend(text);
-  }, [dialogState, processConfirmReply, handleSend]);
-
-  // 查找最后一条 confirmCard 消息
-  const lastConfirmMsg = [...messages].reverse().find(m => m.confirmCard);
+  }, [isConfirming, handleConfirmInput, handleInput]);
 
   return (
     <div className="ai-create-panel">
@@ -316,17 +361,20 @@ export default function AICreatePanel({ onCreated, onCancel }) {
           <AIChatMessage key={i} message={msg} />
         ))}
 
-        {/* 确认卡片（在最后一条 confirmCard 消息后） */}
-        {dialogState === 'CONFIRM' && lastConfirmMsg?.slots && (
+        {/* 确认卡片 */}
+        {isConfirming && confirmPreview && (
           <AIConfirmCard
-            slots={lastConfirmMsg.slots}
+            toolName={confirmToolName === 'create_task' && !pendingConfirmId ? 'create_task'
+              : confirmToolName === 'delete_task' ? (confirmPreview.candidates ? 'delete_task' : 'delete_task')
+              : confirmToolName === 'complete_task' ? (confirmPreview.candidates ? 'complete_task' : 'complete_task')
+              : confirmToolName}
+            preview={confirmPreview}
             onConfirm={handleConfirm}
             onCancel={handleCancelConfirm}
-            onEdit={handleEdit}
           />
         )}
 
-        {/* Loading 状态 */}
+        {/* Loading */}
         {isChatting && (
           <div className="ai-message ai-message-assistant">
             <div className="ai-message-avatar">🤖</div>
@@ -336,7 +384,9 @@ export default function AICreatePanel({ onCreated, onCancel }) {
                 <span className="ai-loading-dot" />
                 <span className="ai-loading-dot" />
                 <span className="ai-loading-text">
-                  {dialogState === 'CHECKING' ? '解析中...' : 'AI 思考中...'}
+                  {dialogState === 'CHECKING' ? '解析中...'
+                    : dialogState === 'AGENT_RUNNING' ? 'AI 思考中...'
+                    : '处理中...'}
                 </span>
               </div>
             </div>
@@ -347,9 +397,9 @@ export default function AICreatePanel({ onCreated, onCancel }) {
       </div>
 
       <AIInputBar
-        onSend={handleInput}
+        onSend={handleUserInput}
         disabled={isChatting}
-        modelName="默认模型"
+        modelName="Agent 模式"
         onExit={onCancel}
       />
 
@@ -392,4 +442,20 @@ export default function AICreatePanel({ onCreated, onCancel }) {
       `}</style>
     </div>
   );
+}
+
+// ── 辅助 ──
+function getSuccessMessage(toolName, data) {
+  switch (toolName) {
+    case 'create_task':
+      return `✅ 任务「${data.title}」已创建成功！`;
+    case 'delete_task':
+      return `🗑 任务「${data.title}」已删除。`;
+    case 'complete_task':
+      return `✅ 任务「${data.title}」已标记为完成！`;
+    case 'update_task':
+      return `✏️ 任务已更新。`;
+    default:
+      return '✅ 操作完成。';
+  }
 }

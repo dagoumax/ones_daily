@@ -4,6 +4,12 @@ const { app } = require('electron');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const { callLLM, buildTaskCreationPrompt, parseLLMResponse, getDefaultModel } = require('../services/llmService');
+const { buildAgentSystemPrompt } = require('../services/agentPrompt');
+const { agentLoop, resumeAgentLoop } = require('../services/agentLoop');
+const { executeToolCall } = require('../services/toolExecutor');
+
+// 降级开关：环境变量 AI_AGENT_MODE=false 切回旧 Prompt 模式
+const USE_AGENT_MODE = process.env.AI_AGENT_MODE !== 'false';
 
 function dbAll(sql, params = []) {
   const db = getDatabase();
@@ -250,113 +256,139 @@ function registerSystemHandlers() {
 }
 
 // ============================================
-// AI 智能对话引擎（Phase 0 骨架）
+// AI 智能对话引擎 — Agent/Tool-calling 模式
 // ============================================
 function registerAiHandlers(mainWindow) {
-  // ai:chat — 真实 LLM 调用
-  ipcMain.handle('ai:chat', async (_, { message, sessionId, history, existingSlots }) => {
+
+  // ai:chat — 统一入口，支持 Agent 模式和旧 Prompt 模式（降级）
+  ipcMain.handle('ai:chat', async (_, params) => {
+    // 确认回调？走确认恢复流程
+    if (params.confirmedToolCall) {
+      return handleConfirmedToolCall(params.confirmedToolCall);
+    }
+
+    // 降级开关
+    if (!USE_AGENT_MODE) {
+      return handleLegacyChat(params);
+    }
+
+    return handleAgentChat(params);
+  });
+
+  // ── Agent 模式：核心处理函数 ──
+  async function handleAgentChat({ message, sessionId, history }) {
     const session = sessionId || uuidv4();
     const startTime = Date.now();
-    
+
     try {
-      // 1. 获取默认模型
+      // 1. 获取模型
       const model = getDefaultModel();
       if (!model) {
-        return { 
-          success: false, 
-          error: '未配置 AI 模型', 
-          fallback: true,
-          sessionId: session 
-        };
+        return { success: false, error: '未配置 AI 模型', fallback: true, sessionId: session };
       }
-      
-      // 2. 构建 Prompt
-      const { messages } = buildTaskCreationPrompt(message, existingSlots);
-      
-      // 3. 注入对话历史（如果有）
-      if (history && history.length > 0) {
-        const historyMsgs = history.map(h => ({ role: h.role, content: h.content }));
-        messages.splice(1, 0, ...historyMsgs);
-      }
-      
-      // 4. 保存用户消息
+
+      // 2. 保存用户消息到 conversations
       dbRun(
         'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
-        [uuidv4(), session, 'user', message, 'chat', JSON.stringify({ existingSlots: existingSlots || {} })]
+        [uuidv4(), session, 'user', message, 'agent_chat', '{}']
       );
-      
-      // 5. 调用 LLM
-      const result = await callLLM(model, messages, { temperature: 0.1, maxTokens: 1024 });
+
+      // 3. 构建 messages（System Prompt + 历史 + 用户输入）
+      const systemPrompt = buildAgentSystemPrompt();
+      const messages = [
+        { role: 'system', content: systemPrompt },
+      ];
+
+      // 注入对话历史（最近 10 条）
+      if (history && history.length > 0) {
+        const recentHistory = history.slice(-10).map(h => ({
+          role: h.role,
+          content: h.content,
+        }));
+        messages.push(...recentHistory);
+      }
+
+      messages.push({ role: 'user', content: message });
+
+      // 4. 运行 Agent 循环
+      console.log(`[ai:chat:agent] Starting agent loop for session ${session}`);
+      const result = await agentLoop(model, messages, session, {
+        maxRounds: 5,
+        temperature: 0.1,
+      });
+
       const durationMs = Date.now() - startTime;
-      
-      // 6. 解析响应
-      const parsed = parseLLMResponse(result.content);
-      
-      if (!parsed) {
-        // JSON 解析失败，重试一次
-        const retryResult = await callLLM(model, messages, { temperature: 0, maxTokens: 1024 });
-        const retryParsed = parseLLMResponse(retryResult.content);
-        
-        if (!retryParsed) {
-          // 两次都失败，记录并降级
-          dbRun(
-            'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
-            [uuidv4(), session, 'assistant', result.content, 'parse_error', JSON.stringify({ durationMs, error: 'JSON parse failed' })]
-          );
-          return {
-            success: false,
-            error: 'AI 响应解析失败',
-            fallback: true,
-            sessionId: session,
-            rawContent: result.content.slice(0, 200),
-          };
-        }
-        
-        // 重试成功
-        const retryDurationMs = Date.now() - startTime;
-        const replyContent = buildReplyContent(retryParsed);
-        const replyId = uuidv4();
+
+      // 5. 保存 assistant 回复到 conversations
+      const replyContent = result.type === 'reply' ? result.content
+        : result.type === 'confirm' ? result.toolResult.message
+        : null;
+
+      if (replyContent) {
         dbRun(
           'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
-          [replyId, session, 'assistant', replyContent, retryParsed.intent, JSON.stringify({
-            slots: retryParsed.slots, durationMs: retryDurationMs,
-            promptTokens: retryResult.promptTokens, completionTokens: retryResult.completionTokens
-          })]
+          [uuidv4(), session, 'assistant', replyContent,
+           result.type === 'confirm' ? result.toolName : 'reply',
+           JSON.stringify({ type: result.type, durationMs })]
         );
-        
-        recordUsage(model.id, 'chat', retryResult.promptTokens, retryResult.completionTokens, retryDurationMs);
-        
-        return buildChatResponse(retryParsed, replyContent, session);
       }
-      
-      // 7. 构建回复
-      const replyContent = buildReplyContent(parsed);
-      const replyId = uuidv4();
-      dbRun(
-        'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
-        [replyId, session, 'assistant', replyContent, parsed.intent, JSON.stringify({
-          slots: parsed.slots, durationMs,
-          promptTokens: result.promptTokens, completionTokens: result.completionTokens
-        })]
-      );
-      
-      // 8. 记录 usage_logs
-      recordUsage(model.id, 'chat', result.promptTokens, result.completionTokens, durationMs);
-      
-      return buildChatResponse(parsed, replyContent, session);
-      
+
+      // 6. 记录使用量
+      if (result.usage) {
+        recordUsage(model.id, 'agent_chat',
+          result.usage.prompt_tokens || 0,
+          result.usage.completion_tokens || 0,
+          durationMs
+        );
+      }
+
+      // 7. 构建响应
+      switch (result.type) {
+        case 'confirm':
+          return {
+            success: true,
+            type: 'confirm',
+            toolName: result.toolName,
+            toolArgs: result.toolArgs,
+            preview: result.toolResult,
+            confirmId: result.confirmId,
+            sessionId: session,
+          };
+
+        case 'reply':
+          return {
+            success: true,
+            type: 'reply',
+            content: result.content,
+            sessionId: session,
+          };
+
+        case 'error':
+          return {
+            success: false,
+            error: result.error,
+            fallback: true,
+            sessionId: session,
+          };
+
+        default:
+          return {
+            success: true,
+            type: 'reply',
+            content: '好的，已完成。',
+            sessionId: session,
+          };
+      }
+
     } catch (e) {
-      const durationMs = Date.now() - startTime;
-      console.error('[ai:chat] Error:', e.message);
-      
-      // 记录错误
+      console.error('[ai:chat:agent] Error:', e.message);
       try {
         dbRun(
           'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
-          [uuidv4(), session, 'assistant', e.message, 'error', JSON.stringify({ durationMs, error: e.message })]
+          [uuidv4(), session, 'assistant', e.message, 'error', JSON.stringify({ error: e.message })]
         );
       } catch (_) {}
-      
+
       return {
         success: false,
         error: e.message,
@@ -364,7 +396,179 @@ function registerAiHandlers(mainWindow) {
         sessionId: session,
       };
     }
-  });
+  }
+
+  // ── 确认回调处理 ──
+  async function handleConfirmedToolCall({ confirmId, toolName, toolArgs, action }) {
+    try {
+      const model = getDefaultModel();
+      if (!model) {
+        return { success: false, error: '未配置 AI 模型', fallback: true };
+      }
+
+      if (action === 'cancel') {
+        // 用户取消 → 恢复循环，注入取消结果
+        const result = await resumeAgentLoop(confirmId, 'cancel', model);
+        return {
+          success: true,
+          type: 'reply',
+          content: result.type === 'reply' ? result.content : '已取消操作。',
+          sessionId: result.sessionId,
+        };
+      }
+
+      // 用户确认 → 先真正执行操作
+      if (toolName === 'create_task') {
+        await executeTaskCreation(toolArgs);
+      } else if (toolName === 'delete_task') {
+        await executeTaskDeletion(toolArgs);
+      } else if (toolName === 'complete_task') {
+        await executeTaskCompletion(toolArgs);
+      } else if (toolName === 'update_task') {
+        await executeTaskUpdate(toolArgs);
+      }
+
+      // 恢复 Agent 循环
+      const result = await resumeAgentLoop(confirmId, 'confirm', model);
+
+      return {
+        success: true,
+        type: result.type || 'reply',
+        content: result.content || '操作完成。',
+        toolName: result.toolName,
+        preview: result.toolResult,
+        confirmId: result.confirmId,
+        sessionId: result.sessionId,
+      };
+
+    } catch (e) {
+      console.error('[ai:chat:confirm] Error:', e.message);
+      return {
+        success: false,
+        error: e.message,
+        fallback: true,
+      };
+    }
+  }
+
+  // ── 实际执行函数（用户确认后调用）──
+  async function executeTaskCreation(args) {
+    const db = getDatabase();
+    const id = uuidv4();
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+    let endTime = args.end_time || null;
+    if (!endTime && args.start_time) {
+      try {
+        const sd = new Date(args.start_time);
+        if (!isNaN(sd.getTime())) {
+          sd.setHours(sd.getHours() + 1);
+          endTime = sd.toISOString();
+        }
+      } catch (_) {}
+    }
+
+    dbRun(
+      `INSERT INTO tasks (id, title, priority, start_time, end_time, tags, location, description, source, created_at, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        id, args.title, args.priority || 'P2',
+        args.start_time, endTime,
+        JSON.stringify(args.tags || []),
+        args.location || '', args.notes || '',
+        'ai_create', now, now,
+      ]
+    );
+    console.log(`[ai:chat:confirm] Task created: ${args.title} (${id})`);
+  }
+
+  async function executeTaskDeletion(args) {
+    const db = getDatabase();
+    if (args.task_id) {
+      dbRun("DELETE FROM tasks WHERE id = ?", [args.task_id]);
+      console.log(`[ai:chat:confirm] Task deleted: ${args.task_id}`);
+    }
+  }
+
+  async function executeTaskCompletion(args) {
+    const db = getDatabase();
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    if (args.task_id) {
+      dbRun(
+        "UPDATE tasks SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
+        [now, now, args.task_id]
+      );
+      console.log(`[ai:chat:confirm] Task completed: ${args.task_id}`);
+    }
+  }
+
+  async function executeTaskUpdate(args) {
+    const db = getDatabase();
+    const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    if (args.task_id) {
+      const fields = [];
+      const params = [];
+      if (args.title) { fields.push('title = ?'); params.push(args.title); }
+      if (args.start_time) { fields.push('start_time = ?'); params.push(args.start_time); }
+      if (args.end_time) { fields.push('end_time = ?'); params.push(args.end_time); }
+      if (args.priority) { fields.push('priority = ?'); params.push(args.priority); }
+      if (args.location !== undefined) { fields.push('location = ?'); params.push(args.location); }
+      fields.push("updated_at = ?");
+      params.push(now, args.task_id);
+
+      dbRun(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, params);
+      console.log(`[ai:chat:confirm] Task updated: ${args.task_id}`);
+    }
+  }
+
+  // ── 旧 Prompt 模式（降级兼容）──
+  async function handleLegacyChat({ message, sessionId, history, existingSlots }) {
+    const session = sessionId || uuidv4();
+    const startTime = Date.now();
+
+    try {
+      const model = getDefaultModel();
+      if (!model) {
+        return { success: false, error: '未配置 AI 模型', fallback: true, sessionId: session };
+      }
+
+      const { messages } = buildTaskCreationPrompt(message, existingSlots);
+
+      if (history && history.length > 0) {
+        const historyMsgs = history.map(h => ({ role: h.role, content: h.content }));
+        messages.splice(1, 0, ...historyMsgs);
+      }
+
+      dbRun(
+        'INSERT INTO conversations (id, session_id, role, content, intent, metadata) VALUES (?,?,?,?,?,?)',
+        [uuidv4(), session, 'user', message, 'chat', JSON.stringify({ existingSlots: existingSlots || {} })]
+      );
+
+      const result = await callLLM(model, messages, { temperature: 0.1, maxTokens: 1024 });
+      const durationMs = Date.now() - startTime;
+      const parsed = parseLLMResponse(result.content);
+
+      if (!parsed) {
+        const retryResult = await callLLM(model, messages, { temperature: 0, maxTokens: 1024 });
+        const retryParsed = parseLLMResponse(retryResult.content);
+        if (!retryParsed) {
+          return { success: false, error: 'AI 响应解析失败', fallback: true, sessionId: session };
+        }
+        const retryDurationMs = Date.now() - startTime;
+        const replyContent = buildReplyContent(retryParsed);
+        recordUsage(model.id, 'chat', retryResult.promptTokens, retryResult.completionTokens, retryDurationMs);
+        return buildChatResponse(retryParsed, replyContent, session);
+      }
+
+      const replyContent = buildReplyContent(parsed);
+      recordUsage(model.id, 'chat', result.promptTokens, result.completionTokens, durationMs);
+      return buildChatResponse(parsed, replyContent, session);
+
+    } catch (e) {
+      console.error('[ai:chat:legacy] Error:', e.message);
+      return { success: false, error: e.message, fallback: true, sessionId: session };
+    }
+  }
 
   // ai:chatStream — 流式输出（骨架：直接发送占位内容）
   ipcMain.handle('ai:chatStream', async (_, { message, sessionId }) => {

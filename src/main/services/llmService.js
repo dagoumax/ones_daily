@@ -2,30 +2,34 @@
  * llmService — 通用 LLM 调用服务
  * 
  * 支持 DeepSeek / OpenAI / Anthropic / 其他 OpenAI 兼容 API
+ * 
+ * 两个主要函数：
+ * - callLLM() — 传统 JSON 模式调用（降级兼容）
+ * - callLLMWithTools() — Agent 模式调用（支持 tool_calls，不加 response_format）
  */
 
 const { getDatabase } = require('../database');
 
+// ============================================
+// 底层 HTTP 请求
+// ============================================
+
 /**
- * 通用 LLM 调用函数
- * @param {Object} modelConfig - 从 model_configs 表查出的模型配置对象
- * @param {Array} messages - [{role, content}] 消息数组
- * @param {Object} options - {temperature, maxTokens, timeout}
- * @returns {Object} - { content, promptTokens, completionTokens, durationMs }
+ * 发送 HTTP 请求到 LLM API
+ * @returns {Promise<Object>} - { json, durationMs }
  */
-async function callLLM(modelConfig, messages, options = {}) {
+function _doRequest(modelConfig, postData, options = {}) {
   const https = require('https');
   const http = require('http');
   const url = require('url');
-  
+
   const parsedUrl = url.parse(modelConfig.endpoint);
   const isHttps = parsedUrl.protocol === 'https:';
   const transport = isHttps ? https : http;
   const isAnthropic = parsedUrl.hostname.includes('anthropic');
   const isDeepSeek = parsedUrl.hostname.includes('deepseek');
   const basePath = (parsedUrl.path || '/').replace(/\/$/, '');
-  
-  // 构建请求路径
+
   let apiPath;
   if (isAnthropic) {
     apiPath = '/v1/messages';
@@ -36,11 +40,67 @@ async function callLLM(modelConfig, messages, options = {}) {
   } else {
     apiPath = basePath + '/v1/chat/completions';
   }
-  
-  // 构建请求体
+
+  const headers = isAnthropic ? {
+    'x-api-key': modelConfig.api_key_encrypted || '',
+    'anthropic-version': '2023-06-01',
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(postData),
+  } : {
+    'Authorization': `Bearer ${modelConfig.api_key_encrypted || ''}`,
+    'Content-Type': 'application/json',
+    'Content-Length': Buffer.byteLength(postData),
+  };
+
+  const startTime = Date.now();
+  return new Promise((resolve, reject) => {
+    const req = transport.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: apiPath,
+      method: 'POST',
+      timeout: options.timeout || 30000,
+      headers,
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        const durationMs = Date.now() - startTime;
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            resolve({ json: JSON.parse(body), durationMs });
+          } catch (e) {
+            reject(new Error(`JSON 解析失败: ${e.message}`));
+          }
+        } else {
+          let detail = '';
+          try { detail = JSON.parse(body).error?.message || body.slice(0, 200); } catch (_) { detail = body.slice(0, 200); }
+          reject(new Error(`API 错误 (HTTP ${res.statusCode})${detail ? ': ' + detail : ''}`));
+        }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
+    req.on('error', e => reject(new Error(`网络错误: ${e.message}`)));
+    req.write(postData);
+    req.end();
+  });
+}
+
+// ============================================
+// 传统 JSON 模式（降级兼容）
+// ============================================
+
+/**
+ * 传统 LLM 调用 — 强制 JSON 输出模式
+ * 用于降级兼容旧的 Prompt 分类模式
+ */
+async function callLLM(modelConfig, messages, options = {}) {
+  const url = require('url');
+  const parsedUrl = url.parse(modelConfig.endpoint);
+  const isAnthropic = parsedUrl.hostname.includes('anthropic');
+
   let postData;
   if (isAnthropic) {
-    // Anthropic: 分离 system message
     const systemMsg = messages.find(m => m.role === 'system');
     const chatMessages = messages.filter(m => m.role !== 'system');
     postData = JSON.stringify({
@@ -59,80 +119,163 @@ async function callLLM(modelConfig, messages, options = {}) {
       response_format: { type: 'json_object' },
     });
   }
-  
-  // 构建 headers
-  const headers = isAnthropic ? {
-    'x-api-key': modelConfig.api_key_encrypted || '',
-    'anthropic-version': '2023-06-01',
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(postData),
-  } : {
-    'Authorization': `Bearer ${modelConfig.api_key_encrypted || ''}`,
-    'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(postData),
-  };
-  
-  // 发送请求
-  const startTime = Date.now();
-  return new Promise((resolve, reject) => {
-    const req = transport.request({
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (isHttps ? 443 : 80),
-      path: apiPath,
-      method: 'POST',
-      timeout: options.timeout || 15000,
-      headers,
-    }, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        const durationMs = Date.now() - startTime;
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          try {
-            const json = JSON.parse(body);
-            let content, promptTokens = 0, completionTokens = 0;
-            if (isAnthropic) {
-              content = json.content?.[0]?.text || '';
-              promptTokens = json.usage?.input_tokens || 0;
-              completionTokens = json.usage?.output_tokens || 0;
-            } else {
-              content = json.choices?.[0]?.message?.content || '';
-              promptTokens = json.usage?.prompt_tokens || 0;
-              completionTokens = json.usage?.completion_tokens || 0;
-            }
-            resolve({ content, promptTokens, completionTokens, durationMs });
-          } catch (e) {
-            reject(new Error(`JSON 解析失败: ${e.message}`));
-          }
-        } else {
-          let detail = '';
-          try { detail = JSON.parse(body).error?.message || body.slice(0, 200); } catch (_) { detail = body.slice(0, 200); }
-          reject(new Error(`API 错误 (HTTP ${res.statusCode})${detail ? ': ' + detail : ''}`));
-        }
-      });
+
+  const { json, durationMs } = await _doRequest(modelConfig, postData, options);
+
+  let content, promptTokens = 0, completionTokens = 0;
+  if (isAnthropic) {
+    content = json.content?.[0]?.text || '';
+    promptTokens = json.usage?.input_tokens || 0;
+    completionTokens = json.usage?.output_tokens || 0;
+  } else {
+    content = json.choices?.[0]?.message?.content || '';
+    promptTokens = json.usage?.prompt_tokens || 0;
+    completionTokens = json.usage?.completion_tokens || 0;
+  }
+  return { content, promptTokens, completionTokens, durationMs };
+}
+
+// ============================================
+// Agent 模式（支持 tool_calls）
+// ============================================
+
+/**
+ * Agent 模式 LLM 调用
+ * 
+ * 与 callLLM 的核心区别：
+ * 1. 不加 response_format 约束（让 LLM 自由选择 text 或 tool_calls）
+ * 2. 传入 tools 参数
+ * 3. 返回完整的 choices[0].message（含 content 和 tool_calls）
+ * 
+ * @param {Object} modelConfig - 模型配置
+ * @param {Array} messages - 消息数组，可含 assistant(tool_calls) 和 tool 角色
+ * @param {Object} options - { temperature, maxTokens, tools, tool_choice }
+ * @returns {Object} - { choices: [{ message }], usage }
+ */
+async function callLLMWithTools(modelConfig, messages, options = {}) {
+  const url = require('url');
+  const parsedUrl = url.parse(modelConfig.endpoint);
+  const isAnthropic = parsedUrl.hostname.includes('anthropic');
+
+  let postData;
+  if (isAnthropic) {
+    // Anthropic: 转换 OpenAI tool 格式 → Anthropic tool 格式
+    const systemMsg = messages.find(m => m.role === 'system');
+    const chatMessages = messages.filter(m => m.role !== 'system');
+
+    const anthropicTools = (options.tools || []).map(t => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    }));
+
+    // 转换 messages 中的 tool_calls → Anthropic tool_use 格式
+    const anthropicMessages = chatMessages.map(m => {
+      if (m.role === 'assistant' && m.tool_calls) {
+        return {
+          role: 'assistant',
+          content: m.tool_calls.map(tc => ({
+            type: 'tool_use',
+            id: tc.id,
+            name: tc.function.name,
+            input: JSON.parse(tc.function.arguments),
+          })),
+        };
+      }
+      if (m.role === 'tool') {
+        return {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: m.tool_call_id, content: m.content }],
+        };
+      }
+      return { role: m.role, content: m.content };
     });
-    req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
-    req.on('error', e => reject(new Error(`网络错误: ${e.message}`)));
-    req.write(postData);
-    req.end();
-  });
+
+    postData = JSON.stringify({
+      model: modelConfig.model_identifier || 'claude-sonnet-4-20250514',
+      system: systemMsg ? systemMsg.content : '',
+      messages: anthropicMessages,
+      max_tokens: options.maxTokens || 2048,
+      temperature: options.temperature ?? 0.1,
+      tools: anthropicTools,
+    });
+  } else {
+    // DeepSeek / OpenAI: 原生 tools 格式
+    postData = JSON.stringify({
+      model: modelConfig.model_identifier || 'default',
+      messages: messages,
+      max_tokens: options.maxTokens || 2048,
+      temperature: options.temperature ?? 0.1,
+      tools: options.tools || [],
+      tool_choice: options.tool_choice || 'auto',
+      // 注意：Agent 模式不加 response_format，让 LLM 自由选择返回 text 或 tool_calls
+    });
+  }
+
+  const { json, durationMs } = await _doRequest(modelConfig, postData, options);
+
+  // 标准化为 OpenAI 格式
+  if (isAnthropic) {
+    return _normalizeAnthropicResponse(json);
+  }
+
+  return {
+    choices: json.choices || [],
+    usage: json.usage || null,
+    _durationMs: durationMs,
+  };
 }
 
 /**
- * 构建任务创建 Prompt
- * @param {string} userMessage - 用户输入文本
- * @param {Object} existingSlots - 已有的槽位信息
- * @returns {Object} - { systemPrompt, messages }
+ * Anthropic 响应 → OpenAI choices 格式标准化
+ */
+function _normalizeAnthropicResponse(json) {
+  const content = json.content || [];
+  const textParts = content.filter(c => c.type === 'text').map(c => c.text);
+  const toolUseParts = content.filter(c => c.type === 'tool_use');
+
+  const message = {
+    role: 'assistant',
+    content: textParts.join('\n') || null,
+  };
+
+  if (toolUseParts.length > 0) {
+    message.tool_calls = toolUseParts.map(tu => ({
+      id: tu.id,
+      type: 'function',
+      function: {
+        name: tu.name,
+        arguments: JSON.stringify(tu.input),
+      },
+    }));
+  }
+
+  return {
+    choices: [{ message }],
+    usage: {
+      prompt_tokens: json.usage?.input_tokens || 0,
+      completion_tokens: json.usage?.output_tokens || 0,
+      total_tokens: (json.usage?.input_tokens || 0) + (json.usage?.output_tokens || 0),
+    },
+  };
+}
+
+// ============================================
+// 向后兼容：保留旧接口
+// ============================================
+
+/**
+ * 构建任务创建 Prompt（旧模式，降级用）
  */
 function buildTaskCreationPrompt(userMessage, existingSlots = {}) {
   const now = new Date();
   const weekDayNames = ['日', '一', '二', '三', '四', '五', '六'];
   const currentTime = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:00+08:00（星期${weekDayNames[now.getDay()]}）`;
-  
-  const existingSlotsStr = Object.keys(existingSlots).length > 0 
-    ? `\n已有信息：${JSON.stringify(existingSlots)}` 
+
+  const existingSlotsStr = Object.keys(existingSlots).length > 0
+    ? `\n已有信息：${JSON.stringify(existingSlots)}`
     : '';
-  
+
   const systemPrompt = `你是智能任务解析器。从用户输入中同时完成意图分类和槽位提取，返回 JSON。
 
 当前时间：${currentTime}
@@ -196,35 +339,21 @@ function buildTaskCreationPrompt(userMessage, existingSlots = {}) {
 }
 
 /**
- * 解析 LLM 返回的原始 JSON 字符串
- * @param {string} rawContent - LLM 返回的原始内容
- * @returns {Object|null} - 解析后的 JSON 对象，失败返回 null
+ * 解析 LLM JSON 响应（旧模式，降级用）
  */
 function parseLLMResponse(rawContent) {
-  if (!rawContent || !rawContent.trim()) {
-    return null;
-  }
-  
+  if (!rawContent || !rawContent.trim()) return null;
+
   let jsonStr = rawContent.trim();
-  
-  // 去掉 markdown 代码块包裹
   const codeBlockMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (codeBlockMatch) {
-    jsonStr = codeBlockMatch[1].trim();
-  }
-  
-  // 尝试找到 JSON 对象（有些 LLM 会在 JSON 前后加文字）
+  if (codeBlockMatch) jsonStr = codeBlockMatch[1].trim();
+
   const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    jsonStr = jsonMatch[0];
-  }
-  
+  if (jsonMatch) jsonStr = jsonMatch[0];
+
   try {
     const parsed = JSON.parse(jsonStr);
-    // 验证必填字段
-    if (!parsed.intent) {
-      return null;
-    }
+    if (!parsed.intent) return null;
     return parsed;
   } catch (e) {
     return null;
@@ -233,12 +362,9 @@ function parseLLMResponse(rawContent) {
 
 /**
  * 获取默认模型配置
- * 优先查找 scene_bindings 中的默认对话模型，否则返回第一个 active 模型
- * @returns {Object|null} - 模型配置对象
  */
 function getDefaultModel() {
   const db = getDatabase();
-  // 优先查找 scene_bindings 中的默认对话模型
   const stmt = db.prepare("SELECT model_id FROM scene_bindings WHERE scene = 'chat' LIMIT 1");
   let modelId = null;
   if (stmt.step()) {
@@ -246,26 +372,27 @@ function getDefaultModel() {
     modelId = row.model_id;
   }
   stmt.free();
-  
+
   if (modelId) {
     const modelStmt = db.prepare("SELECT * FROM model_configs WHERE id = ? AND status = 'active'");
     modelStmt.bind([modelId]);
     let model = null;
-    if (modelStmt.step()) {
-      model = modelStmt.getAsObject();
-    }
+    if (modelStmt.step()) model = modelStmt.getAsObject();
     modelStmt.free();
     if (model) return model;
   }
-  
-  // fallback: 取第一个 active 模型
+
   const fallbackStmt = db.prepare("SELECT * FROM model_configs WHERE status = 'active' LIMIT 1");
   let fallback = null;
-  if (fallbackStmt.step()) {
-    fallback = fallbackStmt.getAsObject();
-  }
+  if (fallbackStmt.step()) fallback = fallbackStmt.getAsObject();
   fallbackStmt.free();
   return fallback;
 }
 
-module.exports = { callLLM, buildTaskCreationPrompt, parseLLMResponse, getDefaultModel };
+module.exports = {
+  callLLM,
+  callLLMWithTools,
+  buildTaskCreationPrompt,
+  parseLLMResponse,
+  getDefaultModel,
+};
