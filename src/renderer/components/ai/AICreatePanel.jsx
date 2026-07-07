@@ -53,44 +53,49 @@ export default function AICreatePanel({ onCreated, onCancel }) {
     setDialogState('CHECKING');
 
     try {
-      // 1. 本地预筛（保留 parseInput.js，快速路径）
-      const { parseInput } = await import('../../utils/parseInput');
-      const parsed = parseInput(text);
-      const isValidTitle = parsed.title && parsed.title.length >= 2 && !/^[\s\d\p{P}]+$/u.test(parsed.title);
-      const isValidTime = parsed.startTime && new Date(parsed.startTime) > new Date();
+      // 1. 语义检测：以下语义必须跳过本地预筛，直接走 Agent
+      const shouldSkipLocal = isNonCreateIntent(text);
 
-      if (isValidTitle && isValidTime) {
-        // 本地命中 → 直接走创建确认
-        const taskPreview = {
-          title: parsed.title,
-          start_time: parsed.startTime,
-          end_time: parsed.endTime || null,
-          priority: parsed.priority || 'P2',
-          tags: parsed.tags || [],
-          location: '',
-          notes: '',
-        };
-        setConfirmState({
-          confirmId: null,
-          toolName: 'create_task',
-          preview: { task_preview: taskPreview, message: `即将创建任务「${parsed.title}」` },
-        });
-        setDialogState('CONFIRM_CREATE');
-        addMessage({ role: 'assistant', content: '已解析任务信息，请确认：', toolCallType: 'create_task' });
-        setIsChatting(false);
-        return;
+      if (!shouldSkipLocal) {
+        // 2. 本地预筛（仅对明确的创建语义生效）
+        const { parseInput } = await import('../../utils/parseInput');
+        const parsed = parseInput(text);
+        const isValidTitle = parsed.title && parsed.title.length >= 2 && !/^[\s\d\p{P}]+$/u.test(parsed.title);
+        const isValidTime = parsed.startTime && new Date(parsed.startTime) > new Date();
+
+        if (isValidTitle && isValidTime) {
+          // 本地命中 → 直接走创建确认
+          const taskPreview = {
+            title: parsed.title,
+            start_time: parsed.startTime,
+            end_time: parsed.endTime || null,
+            priority: parsed.priority || 'P2',
+            tags: parsed.tags || [],
+            location: '',
+            notes: '',
+          };
+          setConfirmState({
+            confirmId: null,
+            toolName: 'create_task',
+            preview: { task_preview: taskPreview, message: `即将创建任务「${parsed.title}」` },
+          });
+          setDialogState('CONFIRM_CREATE');
+          addMessage({ role: 'assistant', content: '已解析任务信息，请确认：', toolCallType: 'create_task' });
+          setIsChatting(false);
+          return;
+        }
+
+        if (isValidTitle && !isValidTime) {
+          addMessage({ role: 'assistant', content: `好的，已记录「${parsed.title}」。请问具体什么时间？` });
+          setPendingSlots({ title: parsed.title, priority: parsed.priority || 'P2', tags: parsed.tags || [] });
+          setMissingSlots(['startTime']);
+          setDialogState('REPLY');
+          setIsChatting(false);
+          return;
+        }
       }
 
-      if (isValidTitle && !isValidTime) {
-        addMessage({ role: 'assistant', content: `好的，已记录「${parsed.title}」。请问具体什么时间？` });
-        setPendingSlots({ title: parsed.title, priority: parsed.priority || 'P2', tags: parsed.tags || [] });
-        setMissingSlots(['startTime']);
-        setDialogState('REPLY');
-        setIsChatting(false);
-        return;
-      }
-
-      // 2. 本地未命中 → 走 Agent 循环
+      // 3. 本地未命中 或 非创建语义 → 走 Agent 循环
       setDialogState('AGENT_RUNNING');
       const response = await window.electronAPI?.ai.chat({
         message: text,
@@ -105,7 +110,7 @@ export default function AICreatePanel({ onCreated, onCancel }) {
 
       if (response.sessionId) setSessionId(response.sessionId);
 
-      // 3. 处理 Agent 响应
+      // 4. 处理 Agent 响应
       handleAgentResponse(response, text);
 
     } catch (e) {
@@ -442,6 +447,51 @@ export default function AICreatePanel({ onCreated, onCancel }) {
       `}</style>
     </div>
   );
+}
+
+// ── 语义检测：判断用户输入是否不是"创建任务"意图 ──
+// 这些语义必须跳过本地预筛，直接交给 LLM/Agent 处理
+function isNonCreateIntent(text) {
+  const lower = text.toLowerCase().trim();
+
+  // 否定/删除语义
+  const deletePatterns = [
+    /不去/, /不做了/, /不搞了/, /取消/, /删除/, /算了/,
+    /不要了/, /不去了/, /不干了/, /不用了/, /免了/,
+  ];
+  if (deletePatterns.some(p => p.test(lower))) return true;
+
+  // 完成语义
+  const completePatterns = [
+    /做完了/, /完成了/, /搞定了/, /结束了/, /已做完/,
+    /已完成/, /做好了/, /办完了/,
+  ];
+  if (completePatterns.some(p => p.test(lower))) return true;
+
+  // 查询语义
+  const queryPatterns = [
+    /有什么/, /有哪些/, /查看/, /查一下/, /看一下/,
+    /安排/, /计划/, /日程/, /今天.*任务/, /明天.*任务/,
+    /这周/, /本周/, /下周/, /今天怎么/, /明天怎么/,
+    /还有.*没做/, /还有.*未完成/,
+  ];
+  if (queryPatterns.some(p => p.test(lower))) return true;
+
+  // 播报/复盘语义
+  const briefPatterns = [
+    /播报/, /总结/, /复盘/, /回顾/, /今天怎么样/,
+    /今天如何/, /汇报/,
+  ];
+  if (briefPatterns.some(p => p.test(lower))) return true;
+
+  // 修改语义
+  const updatePatterns = [
+    /改成/, /改为/, /推迟/, /提前/, /换个时间/,
+    /改一下/, /换到/, /挪到/,
+  ];
+  if (updatePatterns.some(p => p.test(lower))) return true;
+
+  return false;
 }
 
 // ── 辅助 ──
