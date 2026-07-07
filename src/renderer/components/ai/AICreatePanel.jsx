@@ -158,8 +158,11 @@ export default function AICreatePanel({ onCreated, onCancel }) {
           setDialogState('REPLY');
           resetRoundCount();
           addMessage({ role: 'system', content: getSuccessMessage(confirmToolName, data) });
-          addMessage({ role: 'assistant', content: response?.content || '操作完成。还有什么需要帮你的？' });
-          setTimeout(() => onCreated?.(), 800);
+          addMessage({ role: 'assistant', content: response?.content || '操作完成。' });
+          // 只有创建任务时才跳转到日视图
+          if (confirmToolName === 'create_task') {
+            setTimeout(() => onCreated?.(), 800);
+          }
         }
       } else {
         addMessage({ role: 'system', content: `操作失败: ${response?.error || '未知错误'}` });
