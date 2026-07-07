@@ -29,22 +29,47 @@ async function agentLoop(model, messages, sessionId, options = {}) {
   const db = getDatabase();
   let confirmId = null;
 
+  // 消息历史裁剪：保留 system prompt + 最近 20 条消息，防止 token 爆炸
+  const MAX_HISTORY = 20;
+  if (messages.length > MAX_HISTORY) {
+    const systemMsgs = messages.filter(m => m.role === 'system');
+    const recentMsgs = messages.filter(m => m.role !== 'system').slice(-MAX_HISTORY);
+    messages = [...systemMsgs, ...recentMsgs];
+    console.log(`[AgentLoop] Trimmed message history: ${messages.length} messages`);
+  }
+
   for (let round = 0; round < maxRounds; round++) {
     console.log(`[AgentLoop] Round ${round + 1}/${maxRounds}`);
 
+    // LLM 调用，带重试（最多 2 次，指数退避）
     let response;
-    try {
-      response = await callLLMWithTools(model, messages, {
-        temperature: options.temperature ?? 0.1,
-        maxTokens: 2048,
-        tools: TOOLS,
-        tool_choice: 'auto',
-      });
-    } catch (e) {
-      console.error(`[AgentLoop] LLM call failed at round ${round}:`, e.message);
+    let lastError;
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        response = await callLLMWithTools(model, messages, {
+          temperature: options.temperature ?? 0.1,
+          maxTokens: 2048,
+          tools: TOOLS,
+          tool_choice: 'auto',
+          timeout: 60000,  // Agent 模式给更长的超时
+        });
+        break;  // 成功，跳出重试循环
+      } catch (e) {
+        lastError = e;
+        console.error(`[AgentLoop] LLM call failed at round ${round}, attempt ${attempt + 1}:`, e.message);
+        if (attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt), 4000);  // 1s, 2s, max 4s
+          console.log(`[AgentLoop] Retrying in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    if (!response) {
       return {
         type: 'error',
-        error: `AI 调用失败: ${e.message}`,
+        error: `AI 调用失败（已重试 ${maxRetries} 次）: ${lastError?.message || '未知错误'}`,
         fallback: true,
         sessionId,
       };
@@ -64,10 +89,16 @@ async function agentLoop(model, messages, sessionId, options = {}) {
 
     // ── 情况 A：无 tool_calls → 最终自然语言回复 ──
     if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      // 如果 content 为空且是第一轮，可能是 LLM 异常，再给一次机会
+      if (!msg.content && round === 0) {
+        console.warn('[AgentLoop] Empty response in first round, injecting retry prompt');
+        messages.push({ role: 'user', content: '请回复你的判断结果。' });
+        continue;
+      }
       console.log('[AgentLoop] No tool_calls, returning final reply');
       return {
         type: 'reply',
-        content: msg.content || '好的，已完成。',
+        content: msg.content || '收到，请告诉我你需要什么帮助？',
         messages,
         usage: response.usage || null,
       };
@@ -100,7 +131,26 @@ async function agentLoop(model, messages, sessionId, options = {}) {
 
       // ── 需要确认 → 中断循环 ──
       if (toolResult.require_confirmation) {
+        // 如果是恢复模式（用户已确认过），禁止再次 confirm，直接作为 reply 处理
+        if (options._isResume) {
+          console.warn('[AgentLoop] Suppressing confirm in resume mode, treating as reply');
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: JSON.stringify(toolResult),
+          });
+          continue;
+        }
+
         confirmId = uuidv4();
+
+        // 安全解析 tool arguments
+        let toolArgs = {};
+        try {
+          toolArgs = JSON.parse(tc.function.arguments);
+        } catch (e) {
+          toolArgs = { _raw: tc.function.arguments, _parse_error: e.message };
+        }
 
         // 保存循环状态到 ai_decisions 表
         try {
@@ -121,7 +171,7 @@ async function agentLoop(model, messages, sessionId, options = {}) {
         return {
           type: 'confirm',
           toolName: tc.function.name,
-          toolArgs: JSON.parse(tc.function.arguments),
+          toolArgs,
           toolResult,
           confirmId,
           messages,  // 保存 messages 用于恢复
@@ -210,8 +260,19 @@ async function resumeAgentLoop(confirmId, action, model, operationResult = {}) {
 
   // 继续 Agent 循环
   const result = await agentLoop(model, messages, state.sessionId, {
-    maxRounds: 5,  // 恢复后给完整的 5 轮
+    maxRounds: 3,  // 确认后限制更短的轮数
+    _isResume: true,  // 标记为恢复模式，禁止再次触发 confirm
   });
+
+  // 如果 LLM 在确认后又返回 confirm，强制降级为 reply
+  if (result.type === 'confirm') {
+    console.warn('[AgentLoop] LLM returned confirm after user confirmed, forcing reply');
+    return {
+      type: 'reply',
+      content: '操作已完成。',
+      sessionId: state.sessionId,
+    };
+  }
 
   return result;
 }

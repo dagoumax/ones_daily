@@ -160,7 +160,13 @@ export default function AICreatePanel({ onCreated, onCancel }) {
           addMessage({ role: 'assistant', content: response?.content || '操作完成。' });
         }
       } else {
-        addMessage({ role: 'system', content: `操作失败: ${response?.error || '未知错误'}` });
+        // 确认过期或其他错误：清理确认状态，显示错误并恢复正常对话
+        addMessage({
+          role: 'system',
+          content: response?.error?.includes('过期') || response?.error?.includes('损坏')
+            ? '确认会话已过期，请重新操作。'
+            : `操作失败: ${response?.error || '未知错误'}`,
+        });
         setDialogState('REPLY');
       }
     } catch (e) {
