@@ -486,10 +486,11 @@ function registerAiHandlers(mainWindow) {
 
   async function executeTaskDeletion(args) {
     const db = getDatabase();
-    if (args.task_id) {
-      dbRun("DELETE FROM tasks WHERE id = ?", [args.task_id]);
-      console.log(`[ai:chat:confirm] Task deleted: ${args.task_id}`);
-      return { deleted: true, task_id: args.task_id };
+    const taskId = args.task_id || args.id;
+    if (taskId) {
+      dbRun("DELETE FROM tasks WHERE id = ?", [taskId]);
+      console.log(`[ai:chat:confirm] Task deleted: ${taskId}`);
+      return { deleted: true, task_id: taskId };
     }
     return { deleted: false, error: '缺少 task_id' };
   }
@@ -497,13 +498,14 @@ function registerAiHandlers(mainWindow) {
   async function executeTaskCompletion(args) {
     const db = getDatabase();
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    if (args.task_id) {
+    const taskId = args.task_id || args.id;
+    if (taskId) {
       dbRun(
         "UPDATE tasks SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?",
-        [now, now, args.task_id]
+        [now, now, taskId]
       );
-      console.log(`[ai:chat:confirm] Task completed: ${args.task_id}`);
-      return { completed: true, task_id: args.task_id };
+      console.log(`[ai:chat:confirm] Task completed: ${taskId}`);
+      return { completed: true, task_id: taskId };
     }
     return { completed: false, error: '缺少 task_id' };
   }
@@ -511,7 +513,8 @@ function registerAiHandlers(mainWindow) {
   async function executeTaskUpdate(args) {
     const db = getDatabase();
     const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    if (args.task_id) {
+    const taskId = args.task_id || args.id;
+    if (taskId) {
       const fields = [];
       const params = [];
       if (args.title) { fields.push('title = ?'); params.push(args.title); }
@@ -520,11 +523,11 @@ function registerAiHandlers(mainWindow) {
       if (args.priority) { fields.push('priority = ?'); params.push(args.priority); }
       if (args.location !== undefined) { fields.push('location = ?'); params.push(args.location); }
       fields.push("updated_at = ?");
-      params.push(now, args.task_id);
+      params.push(now, taskId);
 
       dbRun(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, params);
-      console.log(`[ai:chat:confirm] Task updated: ${args.task_id}`);
-      return { updated: true, task_id: args.task_id };
+      console.log(`[ai:chat:confirm] Task updated: ${taskId}`);
+      return { updated: true, task_id: taskId };
     }
     return { updated: false, error: '缺少 task_id' };
   }

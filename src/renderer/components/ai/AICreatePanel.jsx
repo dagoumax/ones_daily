@@ -133,12 +133,18 @@ export default function AICreatePanel({ onCreated, onCancel }) {
     setIsChatting(true);
     setDialogState('AGENT_RUNNING');
 
+    // 规范化 toolArgs：确保 task_id 字段存在（formatTask 返回的是 id 字段）
+    const toolArgs = { ...data };
+    if (!toolArgs.task_id && toolArgs.id) {
+      toolArgs.task_id = toolArgs.id;
+    }
+
     try {
       const response = await window.electronAPI?.ai.chat({
         confirmedToolCall: {
           confirmId: pendingConfirmId,
           toolName: confirmToolName,
-          toolArgs: data,
+          toolArgs,
           action: 'confirm',
         },
       });
