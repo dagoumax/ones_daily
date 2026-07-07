@@ -418,18 +418,19 @@ function registerAiHandlers(mainWindow) {
       }
 
       // 用户确认 → 先真正执行操作
+      let operationResult = {};
       if (toolName === 'create_task') {
-        await executeTaskCreation(toolArgs);
+        operationResult = await executeTaskCreation(toolArgs);
       } else if (toolName === 'delete_task') {
-        await executeTaskDeletion(toolArgs);
+        operationResult = await executeTaskDeletion(toolArgs);
       } else if (toolName === 'complete_task') {
-        await executeTaskCompletion(toolArgs);
+        operationResult = await executeTaskCompletion(toolArgs);
       } else if (toolName === 'update_task') {
-        await executeTaskUpdate(toolArgs);
+        operationResult = await executeTaskUpdate(toolArgs);
       }
 
-      // 恢复 Agent 循环
-      const result = await resumeAgentLoop(confirmId, 'confirm', model);
+      // 恢复 Agent 循环，并把真实操作结果传给 LLM
+      const result = await resumeAgentLoop(confirmId, 'confirm', model, operationResult);
 
       return {
         success: true,
@@ -480,6 +481,7 @@ function registerAiHandlers(mainWindow) {
       ]
     );
     console.log(`[ai:chat:confirm] Task created: ${args.title} (${id})`);
+    return { created: true, id, title: args.title };
   }
 
   async function executeTaskDeletion(args) {
@@ -487,7 +489,9 @@ function registerAiHandlers(mainWindow) {
     if (args.task_id) {
       dbRun("DELETE FROM tasks WHERE id = ?", [args.task_id]);
       console.log(`[ai:chat:confirm] Task deleted: ${args.task_id}`);
+      return { deleted: true, task_id: args.task_id };
     }
+    return { deleted: false, error: '缺少 task_id' };
   }
 
   async function executeTaskCompletion(args) {
@@ -499,7 +503,9 @@ function registerAiHandlers(mainWindow) {
         [now, now, args.task_id]
       );
       console.log(`[ai:chat:confirm] Task completed: ${args.task_id}`);
+      return { completed: true, task_id: args.task_id };
     }
+    return { completed: false, error: '缺少 task_id' };
   }
 
   async function executeTaskUpdate(args) {
@@ -518,7 +524,9 @@ function registerAiHandlers(mainWindow) {
 
       dbRun(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, params);
       console.log(`[ai:chat:confirm] Task updated: ${args.task_id}`);
+      return { updated: true, task_id: args.task_id };
     }
+    return { updated: false, error: '缺少 task_id' };
   }
 
   // ── 旧 Prompt 模式（降级兼容）──

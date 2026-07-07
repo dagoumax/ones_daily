@@ -157,7 +157,7 @@ async function agentLoop(model, messages, sessionId, options = {}) {
  * @param {Object} model - 模型配置
  * @returns {Object} - Agent 循环结果
  */
-async function resumeAgentLoop(confirmId, action, model) {
+async function resumeAgentLoop(confirmId, action, model, operationResult = {}) {
   const db = getDatabase();
 
   // 从 ai_decisions 恢复状态
@@ -188,11 +188,12 @@ async function resumeAgentLoop(confirmId, action, model) {
 
   const { messages, toolCall } = state;
 
-  // 注入用户确认结果
+  // 注入用户确认结果 + 真实操作结果
   const confirmResult = {
     success: action === 'confirm',
     confirmed: action === 'confirm',
     cancelled: action === 'cancel',
+    operation: operationResult,
   };
 
   messages.push({

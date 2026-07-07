@@ -18,21 +18,39 @@ const PRIORITY_CONFIG = {
  * - candidates: 多候选列表选择
  */
 export default function AIConfirmCard({ toolName, preview, onConfirm, onCancel, onEdit }) {
+  const [isProcessing, setIsProcessing] = useState(false);
   if (!toolName || !preview) return null;
+
+  const wrapConfirm = (data) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    onConfirm(data);
+  };
+  const wrapCancel = () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    onCancel();
+  };
+
+  const common = {
+    onConfirm: wrapConfirm,
+    onCancel: wrapCancel,
+    isProcessing,
+  };
 
   switch (toolName) {
     case 'create_task':
-      return <CreateConfirmCard preview={preview} onConfirm={onConfirm} onCancel={onCancel} onEdit={onEdit} />;
+      return <CreateConfirmCard preview={preview} onConfirm={wrapConfirm} onCancel={wrapCancel} onEdit={onEdit} isProcessing={isProcessing} />;
     case 'delete_task':
       return preview.candidates
-        ? <CandidateListCard preview={preview} onConfirm={onConfirm} onCancel={onCancel} mode="delete" />
-        : <DeleteConfirmCard preview={preview} onConfirm={onConfirm} onCancel={onCancel} />;
+        ? <CandidateListCard preview={preview} {...common} mode="delete" />
+        : <DeleteConfirmCard preview={preview} {...common} />;
     case 'complete_task':
       return preview.candidates
-        ? <CandidateListCard preview={preview} onConfirm={onConfirm} onCancel={onCancel} mode="complete" />
-        : <CompleteConfirmCard preview={preview} onConfirm={onConfirm} onCancel={onCancel} />;
+        ? <CandidateListCard preview={preview} {...common} mode="complete" />
+        : <CompleteConfirmCard preview={preview} {...common} />;
     case 'update_task':
-      return <UpdateConfirmCard preview={preview} onConfirm={onConfirm} onCancel={onCancel} />;
+      return <UpdateConfirmCard preview={preview} {...common} />;
     default:
       return null;
   }
@@ -41,7 +59,7 @@ export default function AIConfirmCard({ toolName, preview, onConfirm, onCancel, 
 // ============================================
 // 创建任务确认卡片
 // ============================================
-function CreateConfirmCard({ preview, onConfirm, onCancel, onEdit }) {
+function CreateConfirmCard({ preview, onConfirm, onCancel, onEdit, isProcessing }) {
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
   const task = preview.task_preview || preview;
@@ -124,8 +142,10 @@ function CreateConfirmCard({ preview, onConfirm, onCancel, onEdit }) {
         )}
       </div>
       <div className="ac-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>✕ 取消</button>
-        <button className="btn btn-primary" onClick={() => onConfirm(localSlots)}>✓ 确认创建</button>
+        <button className="btn btn-secondary" onClick={onCancel} disabled={isProcessing}>✕ 取消</button>
+        <button className="btn btn-primary" onClick={() => onConfirm(localSlots)} disabled={isProcessing}>
+          {isProcessing ? '处理中...' : '✓ 确认创建'}
+        </button>
       </div>
     </div>
   );
@@ -134,7 +154,7 @@ function CreateConfirmCard({ preview, onConfirm, onCancel, onEdit }) {
 // ============================================
 // 删除确认卡片
 // ============================================
-function DeleteConfirmCard({ preview, onConfirm, onCancel }) {
+function DeleteConfirmCard({ preview, onConfirm, onCancel, isProcessing }) {
   const task = preview.task;
   if (!task) return null;
 
@@ -162,8 +182,10 @@ function DeleteConfirmCard({ preview, onConfirm, onCancel }) {
         </div>
       </div>
       <div className="ac-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>保留</button>
-        <button className="btn btn-danger" onClick={() => onConfirm(task)}>🗑 确认删除</button>
+        <button className="btn btn-secondary" onClick={onCancel} disabled={isProcessing}>保留</button>
+        <button className="btn btn-danger" onClick={() => onConfirm(task)} disabled={isProcessing}>
+          {isProcessing ? '删除中...' : '🗑 确认删除'}
+        </button>
       </div>
     </div>
   );
@@ -172,7 +194,7 @@ function DeleteConfirmCard({ preview, onConfirm, onCancel }) {
 // ============================================
 // 完成确认卡片
 // ============================================
-function CompleteConfirmCard({ preview, onConfirm, onCancel }) {
+function CompleteConfirmCard({ preview, onConfirm, onCancel, isProcessing }) {
   const task = preview.task;
   if (!task) return null;
 
@@ -190,8 +212,10 @@ function CompleteConfirmCard({ preview, onConfirm, onCancel }) {
         </div>
       </div>
       <div className="ac-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>取消</button>
-        <button className="btn btn-success" onClick={() => onConfirm(task)}>✓ 确认完成</button>
+        <button className="btn btn-secondary" onClick={onCancel} disabled={isProcessing}>取消</button>
+        <button className="btn btn-success" onClick={() => onConfirm(task)} disabled={isProcessing}>
+          {isProcessing ? '处理中...' : '✓ 确认完成'}
+        </button>
       </div>
     </div>
   );
@@ -200,7 +224,7 @@ function CompleteConfirmCard({ preview, onConfirm, onCancel }) {
 // ============================================
 // 更新确认卡片（前后对比）
 // ============================================
-function UpdateConfirmCard({ preview, onConfirm, onCancel }) {
+function UpdateConfirmCard({ preview, onConfirm, onCancel, isProcessing }) {
   const { original, updates } = preview;
   if (!original || !updates) return null;
 
@@ -225,8 +249,10 @@ function UpdateConfirmCard({ preview, onConfirm, onCancel }) {
         </div>
       </div>
       <div className="ac-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>取消</button>
-        <button className="btn btn-primary" onClick={() => onConfirm({ task_id: original.id, ...Object.fromEntries(Object.entries(updates).map(([k, v]) => [k, v.to])) })}>✓ 确认修改</button>
+        <button className="btn btn-secondary" onClick={onCancel} disabled={isProcessing}>取消</button>
+        <button className="btn btn-primary" onClick={() => onConfirm({ task_id: original.id, ...Object.fromEntries(Object.entries(updates).map(([k, v]) => [k, v.to])) })} disabled={isProcessing}>
+          {isProcessing ? '处理中...' : '✓ 确认修改'}
+        </button>
       </div>
     </div>
   );
@@ -235,7 +261,7 @@ function UpdateConfirmCard({ preview, onConfirm, onCancel }) {
 // ============================================
 // 多候选列表卡片（删除/完成共用）
 // ============================================
-function CandidateListCard({ preview, onConfirm, onCancel, mode }) {
+function CandidateListCard({ preview, onConfirm, onCancel, mode, isProcessing }) {
   const candidates = preview.candidates || [];
   const [selected, setSelected] = useState(null);
 
@@ -276,9 +302,9 @@ function CandidateListCard({ preview, onConfirm, onCancel, mode }) {
         ))}
       </div>
       <div className="ac-actions">
-        <button className="btn btn-secondary" onClick={onCancel}>取消</button>
-        <button className={`btn ${confirmClass}`} disabled={!selected} onClick={() => selected && onConfirm(selected)}>
-          {confirmLabel}
+        <button className="btn btn-secondary" onClick={onCancel} disabled={isProcessing}>取消</button>
+        <button className={`btn ${confirmClass}`} disabled={!selected || isProcessing} onClick={() => selected && onConfirm(selected)}>
+          {isProcessing ? '处理中...' : confirmLabel}
         </button>
       </div>
     </div>
